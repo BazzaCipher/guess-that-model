@@ -16,9 +16,16 @@ from plots import acf_pacf_fig, series_fig
 
 @st.cache_data(show_spinner=False)
 def _sample(key: str, nobs: int, seed: int):
-    """Deterministic sample path for a model (cached — seed-fixed)."""
+    """Deterministic sample path for a model (cached — seed-fixed).
+
+    Returns only primitive numpy arrays / str, never the ``SimResult`` dataclass:
+    ``@st.cache_data`` pickles its return value, and pickling a custom dataclass
+    across Python/Streamlit builds is brittle (the source of an
+    UnserializableReturnValueError on Streamlit Cloud). Primitives are portable.
+    """
     rng = np.random.default_rng(seed)
-    return BY_KEY[key].simulate(rng, nobs=nobs)
+    res = BY_KEY[key].simulate(rng, nobs=nobs)
+    return res.series, res.target_sq, res.target_rv, res.series_label
 
 
 def _sample_path(key: str) -> None:
@@ -30,15 +37,15 @@ def _sample_path(key: str) -> None:
     """
     if not st.toggle("Sample a path", key=f"samp_{key}"):
         return
-    res = _sample(key, nobs=2_500, seed=0)
-    st.pyplot(series_fig(res.series, title=res.series_label),
+    series, target_sq, target_rv, series_label = _sample(key, nobs=2_500, seed=0)
+    st.pyplot(series_fig(series, title=series_label),
               clear_figure=True, width="stretch")
-    if res.target_sq is not None:
-        target, label = res.target_sq, "squared returns"
-    elif res.target_rv is not None:
-        target, label = res.target_rv, "RV"
+    if target_sq is not None:
+        target, label = target_sq, "squared returns"
+    elif target_rv is not None:
+        target, label = target_rv, "RV"
     else:  # level / integrated series — inspect the series itself
-        target, label = res.series, res.series_label
+        target, label = series, series_label
     st.pyplot(acf_pacf_fig(target, label=label, lags=30),
               clear_figure=True, width="stretch")
 
