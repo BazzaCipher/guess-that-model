@@ -11,7 +11,14 @@ import numpy as np
 import streamlit as st
 
 from models import random_round_in, track_models, tracks
-from plots import acf_pacf_fig, series_fig
+from plots import (
+    acf_pacf_fig,
+    fit_overlay_fig,
+    leverage_xcorr_fig,
+    series_fig,
+    vol_overlay_fig,
+)
+from reports import diagnostic_tells, estimation_report
 
 def _panels_other(r):
     """Mixed track — show every correlogram that exists for this series."""
@@ -92,6 +99,21 @@ def render() -> None:
         st.pyplot(acf_pacf_fig(proc, label=label, lags=lags),
                   clear_figure=True, width="stretch")
 
+    # -- pre-guess diagnostics: the numbers you need to actually decide --
+    # All computed from the observable series (no hidden parameters), so it is
+    # fair to show them before guessing. For volatility, the squared-returns
+    # ACF/PACF can't reveal leverage (GJR/EGARCH) or fat tails (Student-t) — the
+    # cross-correlation and kurtosis below are what separate those look-alikes.
+    if track in ("Volatility", "Realised volatility"):
+        if track == "Volatility":
+            st.subheader("Leverage diagnostic")
+            st.pyplot(leverage_xcorr_fig(result.series, lags=min(lags, 15)),
+                      clear_figure=True, width="stretch")
+        tells = diagnostic_tells(result)
+        if tells:
+            st.subheader("Diagnostic tells")
+            st.table({"value": tells})
+
     # -- guess (among this track's models only) --
     st.subheader("Your guess")
     options = sorted(m.name for m in track_models(track))
@@ -114,3 +136,19 @@ def render() -> None:
         with st.expander("True parameters & giveaway", expanded=True):
             st.write("**Parameters**:", {k: round(v, 4) for k, v in result.params.items()})
             st.write("**Tell:**", result.hint)
+
+        # Volatility & realised-vol rounds: fit the true spec and show what you
+        # were really modelling — the conditional volatility σₜ (or fitted RV) —
+        # plus an EViews-style estimation table that settles nested look-alikes.
+        if track in ("Volatility", "Realised volatility"):
+            est = estimation_report(result)
+            if est is not None:
+                st.subheader("Estimated model")
+                if est.kind == "vol":
+                    st.pyplot(vol_overlay_fig(est.actual, est.fitted),
+                              clear_figure=True, width="stretch")
+                else:
+                    st.pyplot(fit_overlay_fig(est.actual, est.fitted, est.fitted_label),
+                              clear_figure=True, width="stretch")
+                with st.expander("Estimation output (EViews-style) — fitted to this series"):
+                    st.code(est.summary, language="text")

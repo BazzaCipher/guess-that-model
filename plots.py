@@ -34,6 +34,58 @@ def acf_pacf_fig(y: np.ndarray, label: str, lags: int = 30) -> plt.Figure:
     return fig
 
 
+def leverage_xcorr_fig(r: np.ndarray, lags: int = 12) -> plt.Figure:
+    """Cross-correlation of squared returns with *past* returns:
+    corr(r²_t, r_{t-k}) for k=1..lags. Persistently negative ⇒ leverage
+    (a big down-move raises tomorrow's variance more than an up-move) — the
+    asymmetry that separates GJR / EGARCH from a symmetric GARCH, and which the
+    squared-returns ACF/PACF cannot show."""
+    r = np.asarray(r, dtype=float)
+    r = r[np.isfinite(r)]
+    sq = r ** 2
+    sq -= sq.mean()
+    rr = r - r.mean()
+    denom = np.sqrt((rr ** 2).sum() * (sq ** 2).sum())
+    ks = np.arange(1, lags + 1)
+    cc = [float((sq[k:] * rr[:-k]).sum() / denom * np.sqrt(len(r))) for k in ks]
+    # the *normalised* cross-corr (so the band is the usual 2/sqrt(n))
+    cc = [c / np.sqrt(len(r)) for c in cc]
+    band = 2.0 / np.sqrt(len(r))
+    fig, ax = plt.subplots(figsize=(9, 2.6))
+    ax.bar(ks, cc, color="#c44e52", width=0.5)
+    ax.axhline(0, color="k", lw=0.8)
+    ax.axhline(band, ls="--", lw=0.8, color="#888888")
+    ax.axhline(-band, ls="--", lw=0.8, color="#888888")
+    ax.set_title("Leverage — cross-correlation  corr(r²ₜ, rₜ₋ₖ)")
+    ax.set_xlabel("lag k"); ax.margins(x=0.02)
+    fig.tight_layout()
+    return fig
+
+
+def vol_overlay_fig(r: np.ndarray, sigma: np.ndarray) -> plt.Figure:
+    """Returns with the fitted ±2σₜ conditional-volatility envelope."""
+    r = np.asarray(r, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+    fig, ax = plt.subplots(figsize=(9, 2.6))
+    ax.plot(r, lw=0.5, color="#999999", label="returns")
+    ax.plot(2 * sigma, lw=1.0, color="#c44e52", label="±2σₜ (conditional vol)")
+    ax.plot(-2 * sigma, lw=1.0, color="#c44e52")
+    ax.set_title("Fitted conditional volatility σₜ")
+    ax.margins(x=0); ax.legend(fontsize=8, loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def fit_overlay_fig(actual: np.ndarray, fitted: np.ndarray, label: str) -> plt.Figure:
+    """Actual vs fitted series (realised-vol models: RV and its HAR/ARMA fit)."""
+    fig, ax = plt.subplots(figsize=(9, 2.6))
+    ax.plot(actual, lw=0.7, color="#4c72b0", label="actual")
+    ax.plot(fitted, lw=0.9, color="#dd8452", alpha=0.9, label=label)
+    ax.set_title(label); ax.margins(x=0); ax.legend(fontsize=8, loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Explorer helpers
 # ---------------------------------------------------------------------------

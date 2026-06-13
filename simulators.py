@@ -87,10 +87,13 @@ def simulate_garch11(rng: np.random.Generator, nobs: int) -> SimResult:
 
 
 def simulate_garch21(rng: np.random.Generator, nobs: int) -> SimResult:
+    # alpha2 is what separates this from GARCH(1,1): give it a guaranteed,
+    # visible magnitude (and don't let it be swamped by alpha1) so the
+    # squared-returns PACF really does show mass at lag 2.
     while True:
-        a1 = rng.uniform(0.02, 0.10)
-        a2 = rng.uniform(0.02, 0.10)
-        beta = rng.uniform(0.78, 0.90)
+        a1 = rng.uniform(0.03, 0.08)
+        a2 = rng.uniform(0.09, 0.15)
+        beta = rng.uniform(0.74, 0.86)
         if a1 + a2 + beta < 0.995:
             break
     omega = float(rng.uniform(0.02, 0.10))
@@ -109,9 +112,11 @@ def simulate_garch21(rng: np.random.Generator, nobs: int) -> SimResult:
 
 
 def simulate_gjr11(rng: np.random.Generator, nobs: int) -> SimResult:
+    # strong, dominant leverage (gamma) so the asymmetry is unmistakable and the
+    # fit clearly separates GJR from a plain symmetric GARCH(1,1).
     while True:
-        alpha = rng.uniform(0.01, 0.06)
-        gamma = rng.uniform(0.06, 0.16)
+        alpha = rng.uniform(0.00, 0.04)
+        gamma = rng.uniform(0.10, 0.20)
         beta = rng.uniform(0.82, 0.92)
         if alpha + gamma / 2 + beta < 0.995:
             break
@@ -133,7 +138,7 @@ def simulate_gjr11(rng: np.random.Generator, nobs: int) -> SimResult:
 def simulate_egarch11(rng: np.random.Generator, nobs: int) -> SimResult:
     omega = float(rng.uniform(-0.10, -0.02))
     alpha = float(rng.uniform(0.05, 0.15))
-    gamma = float(rng.uniform(-0.12, -0.02))  # negative leverage
+    gamma = float(rng.uniform(-0.18, -0.08))  # clear negative leverage
     beta = float(rng.uniform(0.94, 0.99))
     model = ZeroMean(volatility=EGARCH(p=1, o=1, q=1), distribution=Normal(seed=rng))
     sim = model.simulate([omega, alpha, gamma, beta], nobs=nobs, burn=500)
@@ -156,7 +161,9 @@ def simulate_garch11_t(rng: np.random.Generator, nobs: int) -> SimResult:
         if alpha + beta < 0.995:
             break
     omega = float(rng.uniform(0.02, 0.10))
-    nu = float(rng.uniform(5.0, 12.0))
+    # keep nu low so the tails are visibly fat — at high nu the t collapses to
+    # the Normal and GARCH-t becomes indistinguishable from GARCH(1,1) Normal.
+    nu = float(rng.uniform(4.0, 7.0))
     model = ZeroMean(volatility=GARCH(p=1, q=1), distribution=StudentsT(seed=rng))
     sim = model.simulate([omega, alpha, beta, nu], nobs=nobs, burn=500)
     r = sim["data"].to_numpy()
@@ -176,18 +183,32 @@ def simulate_garch11_t(rng: np.random.Generator, nobs: int) -> SimResult:
 # ---------------------------------------------------------------------------
 
 
+def _norm_betas(rng, b_d, b_w, b_m):
+    """Scale the HAR loadings to a realistic total persistence in (0.90, 0.985).
+
+    Raw draws can sum to >1 (non-stationary → log RV overflows). Rescaling to a
+    drawn persistence keeps the day>week>month ordering and stays stable, and
+    the rescaled betas are what an HAR OLS recovers from the series."""
+    phi = float(rng.uniform(0.90, 0.985))
+    s = b_d + b_w + b_m
+    k = phi / s
+    return b_d * k, b_w * k, b_m * k
+
+
 def _har_sim(rng, nobs, b_d, b_w, b_m, sigma, jump_intensity=0.0, jump_scale=0.0):
     burn = 200
     T = nobs + burn
     log_rv = np.empty(T)
-    # initialise around a sensible mean: solve steady state of log-RV
+    # Corsi HAR on log RV: today's log RV loads on the daily / weekly / monthly
+    # *log-RV averages* (averaging in log space, not log of the RV average — the
+    # latter adds a Jensen drift that, with persistence near 1, blows up).
     c = np.log(0.5) * (1 - b_d - b_w - b_m)  # target mean log RV ~ log(0.5)
     log_rv[:22] = np.log(0.5) + rng.normal(0, sigma, 22)
     for t in range(22, T):
-        rv_d = np.exp(log_rv[t - 1])
-        rv_w = np.exp(log_rv[t - 5 : t]).mean()
-        rv_m = np.exp(log_rv[t - 22 : t]).mean()
-        mu = c + b_d * np.log(rv_d) + b_w * np.log(rv_w) + b_m * np.log(rv_m)
+        rv_d = log_rv[t - 1]
+        rv_w = log_rv[t - 5 : t].mean()
+        rv_m = log_rv[t - 22 : t].mean()
+        mu = c + b_d * rv_d + b_w * rv_w + b_m * rv_m
         log_rv[t] = mu + rng.normal(0, sigma)
         if jump_intensity > 0 and rng.random() < jump_intensity:
             log_rv[t] += rng.normal(0, jump_scale)
@@ -196,9 +217,9 @@ def _har_sim(rng, nobs, b_d, b_w, b_m, sigma, jump_intensity=0.0, jump_scale=0.0
 
 
 def simulate_har_rv(rng: np.random.Generator, nobs: int) -> SimResult:
-    b_d = float(rng.uniform(0.30, 0.45))
-    b_w = float(rng.uniform(0.20, 0.35))
-    b_m = float(rng.uniform(0.15, 0.30))
+    b_d, b_w, b_m = _norm_betas(rng, float(rng.uniform(0.30, 0.45)),
+                                float(rng.uniform(0.20, 0.35)),
+                                float(rng.uniform(0.15, 0.30)))
     sigma = float(rng.uniform(0.30, 0.50))
     rv = _har_sim(rng, nobs, b_d, b_w, b_m, sigma)
     return SimResult(
@@ -214,9 +235,9 @@ def simulate_har_rv(rng: np.random.Generator, nobs: int) -> SimResult:
 
 
 def simulate_har_rv_j(rng: np.random.Generator, nobs: int) -> SimResult:
-    b_d = float(rng.uniform(0.30, 0.45))
-    b_w = float(rng.uniform(0.20, 0.35))
-    b_m = float(rng.uniform(0.15, 0.30))
+    b_d, b_w, b_m = _norm_betas(rng, float(rng.uniform(0.30, 0.45)),
+                                float(rng.uniform(0.20, 0.35)),
+                                float(rng.uniform(0.15, 0.30)))
     sigma = float(rng.uniform(0.25, 0.45))
     jump_p = float(rng.uniform(0.03, 0.07))
     jump_s = float(rng.uniform(0.6, 1.2))
