@@ -88,11 +88,45 @@ def check_apptest() -> None:
     print("  AppTest OK — app shell + inventory + trainer (with a round) run clean")
 
 
+def check_demos() -> None:
+    from streamlit.testing.v1 import AppTest
+    from models import REGISTRY
+
+    demos = [m for m in REGISTRY if m.demo is not None]
+    for m in demos:
+        src = f"from {m.demo.__module__} import {m.demo.__name__}\n{m.demo.__name__}()"
+        at = AppTest.from_string(src, default_timeout=90)
+        at.run()
+        assert not at.exception, f"{m.name} demo: {at.exception}"
+    print(f"  demos OK — {len(demos)} interactive demos run headless without exception")
+
+
+def check_explorer_pages() -> None:
+    """Render each explorer page whole — catches widget-key collisions between
+    demos that only surface when a category's demos render together."""
+    from streamlit.testing.v1 import AppTest
+    from models import by_category, categories
+
+    n = 0
+    for cat in categories():
+        if not any(m.demo is not None for m in by_category(cat)):
+            continue
+        src = ("from views.explorers import _render_category\n"
+               f"_render_category({cat!r})")
+        at = AppTest.from_string(src, default_timeout=120)
+        at.run()
+        assert not at.exception, f"explorer page {cat!r}: {at.exception}"
+        n += 1
+    print(f"  explorer pages OK — {n} category pages render with no key collisions")
+
+
 if __name__ == "__main__":
     print("Smoke tests:")
     try:
         check_registry()
         check_apptest()
+        check_demos()
+        check_explorer_pages()
     except AssertionError as e:
         print(f"FAIL: {e}")
         sys.exit(1)

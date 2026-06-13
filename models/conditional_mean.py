@@ -1,6 +1,7 @@
 """Conditional-mean (time-series) models."""
 from __future__ import annotations
 
+from demos.conditional_mean import demo_midas, demo_single_index
 from models.base import Model
 from simulators import (
     simulate_ar1_garch11,
@@ -90,5 +91,28 @@ MODELS = [
              "persists more than rho^2 alone would give (real GARCH clustering on top).",
         simulate=simulate_ar1_garch11,
         trainer_eligible=True,
+    ),
+    Model(
+        key="midas",
+        name="MIDAS regression",
+        category="Conditional mean",
+        equation=r"y_{t} = \beta_0 + \beta_1 \sum_{k=1}^{K} w_k(\theta)\, x^{(hf)}_{t-k} "
+                 r"+ \varepsilon_t",
+        summary="Mixed-data-sampling regression: relate a low-frequency target to many "
+                "high-frequency lags through a parsimonious weight function w_k(θ).",
+        tell="A handful of shape parameters (Almon / exponential-Almon / Beta) replace one "
+             "coefficient per lag — the weights decay smoothly over the high-frequency window.",
+        demo=demo_midas,
+    ),
+    Model(
+        key="single_index",
+        name="Single-index / market model",
+        category="Conditional mean",
+        equation=r"r_{i,t} = \alpha_i + \beta_i\, r_{m,t} + \varepsilon_{i,t}",
+        summary="One-factor OLS regression of an asset on the market — the source of CAPM "
+                "beta, reused for mapping and time-varying beta.",
+        tell="The slope β is the systematic exposure; R² says how much of the asset's "
+             "variance the single market factor explains.",
+        demo=demo_single_index,
     ),
 ]

@@ -1,6 +1,7 @@
 """Structural instability — regime and break models."""
 from __future__ import annotations
 
+from demos.structural import demo_bai_perron, demo_markov
 from models.base import Model
 from simulators import (
     simulate_markov_switch,
@@ -49,6 +50,20 @@ MODELS = [
         tell="Persistent hidden variance regimes make the squared-returns ACF look GARCH-like "
              "— but the state is latent, not a deterministic recursion.",
         simulate=simulate_markov_switch,
+        demo=demo_markov,
         trainer_eligible=True,
+    ),
+    Model(
+        key="bai_perron",
+        name="Bai-Perron breakpoints",
+        category="Structural instability",
+        family="Structural",
+        equation=r"\min_{\tau_1<\dots<\tau_m}\ \sum_{j=0}^{m} "
+                 r"\sum_{t=\tau_j+1}^{\tau_{j+1}} (y_t - \bar y_j)^2",
+        summary="Estimates multiple structural break dates by minimising total within-segment "
+                "sum of squares, then chooses how many breaks via information criteria.",
+        tell="Recovers unknown change-points as the partition that best explains shifts in the "
+             "mean — distinct from a smooth regime model.",
+        demo=demo_bai_perron,
     ),
 ]
