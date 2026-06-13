@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from models.base import CATEGORIES, Model
+from models.base import CATEGORIES, TRACKS, Model
 from models import (
     conditional_mean,
     multivariate,
@@ -74,3 +74,20 @@ def families() -> list[str]:
 def random_round(rng: np.random.Generator, nobs: int):
     name = rng.choice(list(SIMULATORS.keys()))
     return SIMULATORS[name](rng, nobs=nobs)
+
+
+# ---- trainer tracks (player picks a track, guesses among its models) ----
+def tracks() -> list[str]:
+    """Tracks that have trainer models, in canonical order."""
+    present = {m.track for m in TRAINER_MODELS if m.track}
+    return [t for t in TRACKS if t in present]
+
+
+def track_models(track: str) -> list[Model]:
+    return [m for m in TRAINER_MODELS if m.track == track]
+
+
+def random_round_in(rng: np.random.Generator, track: str, nobs: int):
+    models = track_models(track)
+    m = models[int(rng.integers(len(models)))]
+    return m.simulate(rng, nobs=nobs)

@@ -24,6 +24,7 @@ MODELS = [
         tell="ACF and PACF stay inside the confidence bands at every lag, on both the "
              "returns and the squared returns.",
         simulate=simulate_white_noise,
+        track="Conditional mean",
         trainer_eligible=True,
     ),
     Model(
@@ -38,6 +39,7 @@ MODELS = [
         tell="The returns ACF cuts off sharply after lag q while the PACF tails off — the "
              "mirror image of AR.",
         simulate=simulate_ma_q,
+        track="Conditional mean",
         trainer_eligible=True,
     ),
     Model(
@@ -49,6 +51,7 @@ MODELS = [
         summary="Autoregression in the mean: today's return loads on its own recent history.",
         tell="The returns PACF cuts off after lag p while the ACF tails off geometrically.",
         simulate=simulate_ar_p,
+        track="Conditional mean",
         trainer_eligible=True,
     ),
     Model(
@@ -62,6 +65,7 @@ MODELS = [
         tell="Both the returns ACF and PACF tail off (neither cuts cleanly) — the ARMA "
              "signature.",
         simulate=simulate_arma_pq,
+        track="Conditional mean",
         trainer_eligible=True,
     ),
     Model(
@@ -75,6 +79,7 @@ MODELS = [
         tell="The level wanders like a random walk and its ACF decays almost linearly (near "
              "unit root); one difference makes it stationary.",
         simulate=simulate_arima,
+        track="Conditional mean",
         trainer_eligible=True,
     ),
     Model(
@@ -90,7 +95,7 @@ MODELS = [
         tell="Two genuine layers: returns ACF shows AR(1) decay AND the squared-return ACF "
              "persists more than rho^2 alone would give (real GARCH clustering on top).",
         simulate=simulate_ar1_garch11,
-        trainer_eligible=True,
+        trainer_eligible=False,
     ),
     Model(
         key="midas",

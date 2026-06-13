@@ -22,6 +22,7 @@ MODELS = [
         tell="ACF decays slowly (long-memory-like) but the PACF has spikes near lags 1, 5 "
              "and 22 (day / week / month).",
         simulate=simulate_har_rv,
+        track="Realised volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -36,6 +37,7 @@ MODELS = [
         tell="HAR shape with extra outliers — large isolated spikes that don't fit the smooth "
              "long-memory decay.",
         simulate=simulate_har_rv_j,
+        track="Realised volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -49,6 +51,7 @@ MODELS = [
         tell="PACF decays quickly after lag 1 — no weekly / monthly bumps that a HAR would "
              "show.",
         simulate=simulate_arma11_rv,
+        track="Realised volatility",
         trainer_eligible=True,
     ),
     Model(

@@ -27,6 +27,7 @@ MODELS = [
                 "shock and yesterday's variance.",
         tell="Squared-returns ACF decays slowly with the PACF cutting off near lag 1.",
         simulate=simulate_garch11,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -41,6 +42,7 @@ MODELS = [
         tell="Squared-returns PACF shows mass at lags 1 AND 2 — the extra ARCH lag vs "
              "GARCH(1,1).",
         simulate=simulate_garch21,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -55,6 +57,7 @@ MODELS = [
         tell="Variance after big NEGATIVE shocks is much larger; the cross-correlation of "
              "returns and squared returns is negative.",
         simulate=simulate_gjr11,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -69,6 +72,7 @@ MODELS = [
         tell="Log-variance specification — the ACF of squared returns persists almost like a "
              "unit root.",
         simulate=simulate_egarch11,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -83,6 +87,7 @@ MODELS = [
         tell="Same dynamics as GARCH(1,1) Normal but the kurtosis is much higher (visible as "
              "fatter tails in the raw series).",
         simulate=simulate_garch11_t,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(
@@ -96,6 +101,7 @@ MODELS = [
         tell="The squared-returns PACF cuts off after lag q (no GARCH smoothing), so the ACF "
              "decays much faster than a GARCH's.",
         simulate=simulate_arch_q,
+        track="Volatility",
         trainer_eligible=True,
     ),
     Model(

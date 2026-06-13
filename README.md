@@ -9,9 +9,12 @@ Live: <https://guess-that-model.bazza.space>
 
 ## Three modes
 
-- **🎯 Trainer** — the guessing game. Each round draws a process; you guess the
-  *family* (Easy) or the *exact model* (Hard) from the series + correlograms,
-  then it reveals the true parameters and the "tell".
+- **🎯 Trainer** — the guessing game. Pick a **track** (conditional mean,
+  volatility, or realised vol); each round draws a model from that track and
+  shows the ACF/PACF of the track's stochastic process — the returns for a mean
+  model, the squared returns for a volatility model, the RV series for a
+  realised-vol model. Guess among that track's models; it reveals the true
+  parameters and the "tell".
 - **📚 Inventory** — the full model deck, organised by the seven course blocks.
   Each card shows the equation, a one-line summary, and the diagnostic "tell";
   open a card to sample a path or run its interactive demo. Beyond-course

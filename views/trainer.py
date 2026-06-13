@@ -1,157 +1,103 @@
-"""Trainer — the original 'guess the model from ACF/PACF' game.
+"""Trainer — pick a track (mean / volatility / realised vol), then guess which
+model produced the series from the ACF/PACF of that track's process.
 
-Body migrated almost verbatim from the old single-page ``app.py``; it now draws
-from the registry's trainer-eligible models rather than a hand-kept dict.
+Each track shows ONE correlogram, of the stochastic process that defines it:
+the returns for a mean model, the squared returns for a volatility model, the
+realised-variance series for a realised-vol model.
 """
 from __future__ import annotations
 
 import numpy as np
 import streamlit as st
 
-from models import SIMULATORS, families, random_round
+from models import random_round_in, track_models, tracks
 from plots import acf_pacf_fig, series_fig
 
+# track -> (extract the process array from a SimResult, correlogram label)
+TRACK_VIEW = {
+    "Conditional mean": (lambda r: r.series, lambda r: r.series_label),
+    "Volatility": (lambda r: r.target_sq, lambda r: "squared returns"),
+    "Realised volatility": (lambda r: r.target_rv, lambda r: "realised variance"),
+}
 
-def _new_round(nobs: int) -> None:
+
+def _new_round(track: str, nobs: int) -> None:
     st.session_state["seed_counter"] += 1
     rng = np.random.default_rng()
-    st.session_state["round"] = random_round(rng, nobs=nobs)
+    st.session_state["round"] = random_round_in(rng, track, nobs=nobs)
+    st.session_state["round_track"] = track
     st.session_state["revealed"] = False
     st.session_state["last_guess"] = None
 
 
 def render() -> None:
-    # -- sidebar settings --
-    st.sidebar.header("Settings")
-    difficulty = st.sidebar.radio(
-        "Difficulty",
-        ["Easy — guess family", "Hard — guess exact model"],
-        index=0,
-    )
-    view_mode = st.sidebar.radio(
-        "ACF/PACF target",
-        [
-            "Default (raw + squared returns; RV when applicable)",
-            "Returns only",
-            "Squared returns only",
-            "RV only",
-            "Auto (canonical for the drawn family)",
-        ],
-        index=0,
-    )
-    nobs = st.sidebar.slider("Sample length", min_value=500, max_value=10_000,
-                             value=2_500, step=500)
-    lags = st.sidebar.slider("Lags shown on ACF/PACF", min_value=10, max_value=60,
-                             value=30, step=5)
+    # -- session state --
+    if "round" not in st.session_state:
+        st.session_state.update(round=None, round_track=None, revealed=False,
+                                correct=0, attempted=0, last_guess=None, seed_counter=0)
 
+    # -- sidebar --
+    st.sidebar.header("Settings")
+    track = st.sidebar.radio("Track — what kind of model?", tracks(), index=0,
+                             help="You'll guess among the models of this track only.")
+    nobs = st.sidebar.slider("Sample length", 500, 10_000, 2_500, 500)
+    lags = st.sidebar.slider("Lags shown on ACF/PACF", 10, 60, 30, 5)
     st.sidebar.markdown("---")
     if st.sidebar.button("Reset score"):
         st.session_state["correct"] = 0
         st.session_state["attempted"] = 0
 
-    # -- session state --
-    if "round" not in st.session_state:
-        st.session_state["round"] = None
-        st.session_state["revealed"] = False
-        st.session_state["correct"] = 0
-        st.session_state["attempted"] = 0
-        st.session_state["last_guess"] = None
-        st.session_state["seed_counter"] = 0
+    # auto-draw a fresh round when the track changes (or on first load)
+    if st.session_state["round"] is None or st.session_state["round_track"] != track:
+        _new_round(track, nobs)
 
     # -- header / score --
-    st.title("ACF / PACF — model guessing trainer")
+    st.title("Guess the model")
+    st.caption(f"Track: **{track}** — guess which of its {len(track_models(track))} models "
+               "produced this series.")
     c1, c2, c3 = st.columns([1, 1, 4])
-    with c1:
-        st.metric("Correct", st.session_state["correct"])
-    with c2:
-        st.metric("Attempted", st.session_state["attempted"])
-    with c3:
-        if st.session_state["attempted"] > 0:
-            pct = 100 * st.session_state["correct"] / st.session_state["attempted"]
-            st.metric("Hit rate", f"{pct:.0f}%")
+    c1.metric("Correct", st.session_state["correct"])
+    c2.metric("Attempted", st.session_state["attempted"])
+    if st.session_state["attempted"] > 0:
+        pct = 100 * st.session_state["correct"] / st.session_state["attempted"]
+        c3.metric("Hit rate", f"{pct:.0f}%")
 
     if st.button("New round", type="primary"):
-        _new_round(nobs)
-
-    if st.session_state["round"] is None:
-        st.info("Hit **New round** to draw a process.")
-        return
+        _new_round(track, nobs)
 
     result = st.session_state["round"]
+    get_proc, get_label = TRACK_VIEW[track]
+    proc, label = get_proc(result), get_label(result)
 
-    # -- plots --
+    # -- series path --
     st.subheader("Simulated series")
     st.pyplot(series_fig(result.series, title=result.series_label),
               clear_figure=True, width="stretch")
 
-    st.subheader("ACF / PACF")
-    panels: list[tuple[np.ndarray, str]] = []
-    returns_available = result.target_sq is not None
-    rv_available = result.target_rv is not None
-    # A level/integrated series (e.g. ARIMA, unit-root+breaks) carries neither a
-    # squared nor an RV target — the series itself is the object to inspect.
-    level_only = not returns_available and not rv_available
+    # -- ACF / PACF of the track's stochastic process --
+    st.subheader(f"ACF / PACF — {label}")
+    st.pyplot(acf_pacf_fig(proc, label=label, lags=lags),
+              clear_figure=True, width="stretch")
 
-    if view_mode.startswith("Default") or view_mode.startswith("Auto"):
-        if level_only:
-            panels.append((result.series, result.series_label))
-        if returns_available:
-            if view_mode.startswith("Default"):
-                panels.append((result.series, "returns"))
-            panels.append((result.target_sq, "squared returns"))
-        if rv_available:
-            panels.append((result.target_rv, "RV"))
-    elif view_mode == "Returns only":
-        if returns_available:
-            panels.append((result.series, "returns"))
-        elif level_only:
-            panels.append((result.series, result.series_label))
-        else:
-            st.warning("This round produced an RV-style series; returns view does not apply.")
-    elif view_mode == "Squared returns only":
-        if returns_available:
-            panels.append((result.target_sq, "squared returns"))
-        else:
-            st.warning("This round produced a level/RV series; squared returns do not apply.")
-    elif view_mode == "RV only":
-        if rv_available:
-            panels.append((result.target_rv, "RV"))
-        else:
-            st.warning("This round produced a returns/level series; RV view does not apply.")
-
-    for y, lbl in panels:
-        st.pyplot(acf_pacf_fig(y, label=lbl, lags=lags), clear_figure=True,
-                  width="stretch")
-
-    # -- guess --
+    # -- guess (among this track's models only) --
     st.subheader("Your guess")
-    if difficulty.startswith("Easy"):
-        options = families()
-    else:
-        options = sorted(SIMULATORS.keys())
+    options = sorted(m.name for m in track_models(track))
+    choice = st.radio("Which model?", options, key=f"guess_{st.session_state['seed_counter']}")
 
-    choice = st.radio("Pick one:", options, key=f"guess_{st.session_state['seed_counter']}")
-
-    submit_col, _ = st.columns([1, 5])
-    with submit_col:
-        if st.button("Submit guess", disabled=st.session_state["revealed"]):
-            true_label = result.family if difficulty.startswith("Easy") else result.name
-            correct = (choice == true_label)
-            st.session_state["attempted"] += 1
-            if correct:
-                st.session_state["correct"] += 1
-            st.session_state["last_guess"] = choice
-            st.session_state["revealed"] = True
+    if st.button("Submit guess", disabled=st.session_state["revealed"]):
+        st.session_state["attempted"] += 1
+        if choice == result.name:
+            st.session_state["correct"] += 1
+        st.session_state["last_guess"] = choice
+        st.session_state["revealed"] = True
 
     # -- reveal --
     if st.session_state["revealed"]:
-        true_label = result.family if difficulty.startswith("Easy") else result.name
-        if st.session_state["last_guess"] == true_label:
-            st.success(f"Correct — this was a **{result.name}** ({result.family} family).")
+        if st.session_state["last_guess"] == result.name:
+            st.success(f"Correct — this was **{result.name}**.")
         else:
-            st.error(f"Not quite. Truth: **{result.name}** ({result.family} family). "
+            st.error(f"Not quite. Truth: **{result.name}**. "
                      f"Your guess: {st.session_state['last_guess']}.")
-
         with st.expander("True parameters & giveaway", expanded=True):
             st.write("**Parameters**:", {k: round(v, 4) for k, v in result.params.items()})
             st.write("**Tell:**", result.hint)

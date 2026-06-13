@@ -65,6 +65,29 @@ def _run_view(module: str):
     return at
 
 
+def check_tracks() -> None:
+    import numpy as np
+    from models import track_models, tracks
+    from views.trainer import TRACK_VIEW
+
+    rng = np.random.default_rng(0)
+    ts = tracks()
+    assert ts, "no trainer tracks"
+    total = 0
+    for t in ts:
+        assert t in TRACK_VIEW, f"track {t!r} has no TRACK_VIEW entry"
+        ms = track_models(t)
+        assert len(ms) >= 2, f"track {t!r} needs >=2 models to guess between"
+        get_proc, _ = TRACK_VIEW[t]
+        for m in ms:
+            res = m.simulate(rng, nobs=600)
+            proc = get_proc(res)
+            assert proc is not None and np.isfinite(proc).all(), \
+                f"{m.name}: track {t!r} process is None/non-finite"
+        total += len(ms)
+    print(f"  tracks OK — {len(ts)} tracks {ts}, {total} models")
+
+
 def check_apptest() -> None:
     # app.py shell (nav + default page)
     from streamlit.testing.v1 import AppTest
@@ -85,7 +108,15 @@ def check_apptest() -> None:
             tr.run()
             break
     assert not tr.exception, f"trainer after New round: {tr.exception}"
-    print("  AppTest OK — app shell + inventory + trainer (with a round) run clean")
+    # submit a guess to exercise the reveal path
+    for b in tr.button:
+        if b.label == "Submit guess":
+            b.click()
+            tr.run()
+            break
+    assert not tr.exception, f"trainer after guess: {tr.exception}"
+    assert tr.session_state["attempted"] == 1, "guess did not register"
+    print("  AppTest OK — app shell + inventory + trainer (round + guess + reveal) run clean")
 
 
 def check_demos() -> None:
@@ -124,6 +155,7 @@ if __name__ == "__main__":
     print("Smoke tests:")
     try:
         check_registry()
+        check_tracks()
         check_apptest()
         check_demos()
         check_explorer_pages()

@@ -32,6 +32,16 @@ CATEGORIES = [
     "Tail & extreme",
 ]
 
+# Trainer tracks — the player picks one and guesses among its models.  Each
+# track has a single diagnostic process whose ACF/PACF is shown (see
+# views/trainer.py TRACK_VIEW): mean → the series, volatility → squared returns,
+# realised vol → the RV series.
+TRACKS = [
+    "Conditional mean",
+    "Volatility",
+    "Realised volatility",
+]
+
 
 @dataclass(frozen=True)
 class Model:
@@ -44,6 +54,7 @@ class Model:
     summary: str                   # 1–2 sentence "what it is"
     tell: str                      # generic diagnostic signature / giveaway
     family: Optional[str] = None   # trainer guess-bucket (GARCH/HAR/Mean/Other/…) or None
+    track: Optional[str] = None    # trainer track — guess among models sharing a track
     beyond_course: bool = False    # lecturer-flagged "beyond this course"
     references: tuple[str, ...] = ()
     # behaviour — series models set simulate; non-series models set demo:
@@ -56,3 +67,6 @@ class Model:
             raise ValueError(f"{self.name}: unknown category {self.category!r}")
         if self.trainer_eligible and self.simulate is None:
             raise ValueError(f"{self.name}: trainer_eligible but no simulate()")
+        if self.trainer_eligible and self.track not in TRACKS:
+            raise ValueError(f"{self.name}: trainer_eligible needs a valid track "
+                             f"(got {self.track!r})")
