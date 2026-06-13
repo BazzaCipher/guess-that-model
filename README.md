@@ -1,7 +1,7 @@
 # Guess That Model!
 
-Practice tool: a random GARCH or HAR process is simulated each round; you
-guess the model class from the time-series and ACF/PACF.
+Practice tool: a random GARCH, HAR, or conditional-mean (ARMA) process is
+simulated each round; you guess the model class from the time-series and ACF/PACF.
 
 Live: <https://guess-that-model.bazza.space>
 
@@ -18,6 +18,7 @@ streamlit run app.py
 |--|--|
 | GARCH | GARCH(1,1) Normal, GARCH(2,1) Normal, GJR-GARCH(1,1), EGARCH(1,1), GARCH(1,1) Student-t |
 | HAR | HAR-RV (Corsi), HAR-RV-J |
+| Mean | AR(1) returns, ARMA(1,1) returns, AR(1)-GARCH(1,1) |
 | Other | ARMA(1,1) on log RV, white noise |
 
 ## Controls

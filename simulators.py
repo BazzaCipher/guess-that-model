@@ -221,6 +221,88 @@ def simulate_har_rv_j(rng: np.random.Generator, nobs: int) -> SimResult:
 
 
 # ---------------------------------------------------------------------------
+# Conditional-mean family — structure lives in the *returns* ACF/PACF, not
+# (only) in squared returns.  Counterpart to the variance-focused families.
+# ---------------------------------------------------------------------------
+
+
+def simulate_ar1(rng: np.random.Generator, nobs: int) -> SimResult:
+    phi = float(rng.uniform(0.35, 0.70))
+    sigma = float(rng.uniform(0.8, 1.4))
+    burn = 200
+    T = nobs + burn
+    eps = rng.normal(0.0, sigma, T)
+    r = np.empty(T)
+    r[0] = eps[0]
+    for t in range(1, T):
+        r[t] = phi * r[t - 1] + eps[t]
+    r = r[burn:]
+    return SimResult(
+        series=r,
+        target_sq=r ** 2,
+        target_rv=None,
+        family="Mean",
+        name="AR(1) returns",
+        params={"phi": phi, "sigma": sigma},
+        hint="Structure is in the *returns* ACF (geometric decay, PACF cuts at lag 1). "
+             "The squared-return ACF only echoes it as roughly rho^2, decaying faster — "
+             "no volatility process of its own (a classic trap for 'looks like GARCH').",
+    )
+
+
+def simulate_arma11(rng: np.random.Generator, nobs: int) -> SimResult:
+    phi = float(rng.uniform(0.40, 0.75))
+    theta = float(rng.uniform(0.20, 0.50))
+    sigma = float(rng.uniform(0.8, 1.4))
+    burn = 200
+    T = nobs + burn
+    eps = rng.normal(0.0, sigma, T)
+    r = np.empty(T)
+    r[0] = eps[0]
+    for t in range(1, T):
+        r[t] = phi * r[t - 1] + eps[t] + theta * eps[t - 1]
+    r = r[burn:]
+    return SimResult(
+        series=r,
+        target_sq=r ** 2,
+        target_rv=None,
+        family="Mean",
+        name="ARMA(1,1) returns",
+        params={"phi": phi, "theta": theta, "sigma": sigma},
+        hint="Both returns ACF and PACF tail off (neither cuts cleanly) — the ARMA "
+             "signature in the mean. Squared returns only mirror it as ~rho^2, not an "
+             "independent clustering signal.",
+    )
+
+
+def simulate_ar1_garch11(rng: np.random.Generator, nobs: int) -> SimResult:
+    phi = float(rng.uniform(0.30, 0.60))
+    while True:
+        alpha = rng.uniform(0.04, 0.12)
+        beta = rng.uniform(0.80, 0.92)
+        if alpha + beta < 0.995:
+            break
+    omega = float(rng.uniform(0.02, 0.10))
+    vol = ZeroMean(volatility=GARCH(p=1, q=1), distribution=Normal(seed=rng))
+    e = vol.simulate([omega, alpha, beta], nobs=nobs, burn=500)["data"].to_numpy()
+    r = np.empty_like(e)
+    r[0] = e[0]
+    for t in range(1, len(e)):
+        r[t] = phi * r[t - 1] + e[t]
+    return SimResult(
+        series=r,
+        target_sq=r ** 2,
+        target_rv=None,
+        family="Mean",
+        name="AR(1)-GARCH(1,1)",
+        params={"phi": phi, "omega": omega, "alpha": alpha, "beta": beta},
+        hint="Two genuine layers: returns ACF shows AR(1) decay (conditional mean), AND "
+             "the squared-return ACF persists *more* than rho^2 alone would give — real "
+             "GARCH clustering on top of the mean dynamics.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Foils — ARMA(1,1) on RV and white noise
 # ---------------------------------------------------------------------------
 
@@ -276,6 +358,9 @@ SIMULATORS = {
     "GARCH(1,1) Student-t": simulate_garch11_t,
     "HAR-RV (Corsi)": simulate_har_rv,
     "HAR-RV-J": simulate_har_rv_j,
+    "AR(1) returns": simulate_ar1,
+    "ARMA(1,1) returns": simulate_arma11,
+    "AR(1)-GARCH(1,1)": simulate_ar1_garch11,
     "ARMA(1,1) on log RV": simulate_arma11_rv,
     "White noise": simulate_white_noise,
 }
@@ -286,7 +371,7 @@ FAMILY_OF = {name: SIMULATORS[name](np.random.default_rng(0), nobs=300).family
 
 
 def families() -> list[str]:
-    return ["GARCH", "HAR", "Other"]
+    return ["GARCH", "HAR", "Mean", "Other"]
 
 
 def random_round(rng: np.random.Generator, nobs: int):
