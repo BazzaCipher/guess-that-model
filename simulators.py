@@ -345,35 +345,6 @@ def simulate_white_noise(rng: np.random.Generator, nobs: int) -> SimResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------------
-
-
-SIMULATORS = {
-    "GARCH(1,1) Normal": simulate_garch11,
-    "GARCH(2,1) Normal": simulate_garch21,
-    "GJR-GARCH(1,1)": simulate_gjr11,
-    "EGARCH(1,1)": simulate_egarch11,
-    "GARCH(1,1) Student-t": simulate_garch11_t,
-    "HAR-RV (Corsi)": simulate_har_rv,
-    "HAR-RV-J": simulate_har_rv_j,
-    "AR(1) returns": simulate_ar1,
-    "ARMA(1,1) returns": simulate_arma11,
-    "AR(1)-GARCH(1,1)": simulate_ar1_garch11,
-    "ARMA(1,1) on log RV": simulate_arma11_rv,
-    "White noise": simulate_white_noise,
-}
-
-
-FAMILY_OF = {name: SIMULATORS[name](np.random.default_rng(0), nobs=300).family
-             for name in SIMULATORS}
-
-
-def families() -> list[str]:
-    return ["GARCH", "HAR", "Mean", "Other"]
-
-
-def random_round(rng: np.random.Generator, nobs: int):
-    name = rng.choice(list(SIMULATORS.keys()))
-    return SIMULATORS[name](rng, nobs=nobs)
+# The registry (SIMULATORS / FAMILY_OF / families / random_round) now lives in
+# the ``models`` package, derived from the Model records.  This module stays a
+# pure library of ``simulate_*`` functions with no Streamlit or registry deps.
