@@ -78,12 +78,13 @@ def check_tracks() -> None:
         assert t in TRACK_VIEW, f"track {t!r} has no TRACK_VIEW entry"
         ms = track_models(t)
         assert len(ms) >= 2, f"track {t!r} needs >=2 models to guess between"
-        get_proc, _ = TRACK_VIEW[t]
         for m in ms:
             res = m.simulate(rng, nobs=600)
-            proc = get_proc(res)
-            assert proc is not None and np.isfinite(proc).all(), \
-                f"{m.name}: track {t!r} process is None/non-finite"
+            panels = TRACK_VIEW[t](res)
+            assert panels, f"{m.name}: track {t!r} produced no panels"
+            for proc, _label in panels:
+                assert proc is not None and np.isfinite(proc).all(), \
+                    f"{m.name}: track {t!r} panel is None/non-finite"
         total += len(ms)
     print(f"  tracks OK — {len(ts)} tracks {ts}, {total} models")
 

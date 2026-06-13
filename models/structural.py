@@ -22,7 +22,8 @@ MODELS = [
         tell="Looks I(1) but with abrupt level shifts; the breaks masquerade as persistence "
              "and bias unit-root tests toward non-rejection.",
         simulate=simulate_unit_root_breaks,
-        trainer_eligible=False,
+        track="Both / other",
+        trainer_eligible=True,
     ),
     Model(
         key="setar",
@@ -36,7 +37,8 @@ MODELS = [
         tell="Regime-dependent persistence — the autocorrelation differs in the two regimes, "
              "producing asymmetric, state-dependent behaviour.",
         simulate=simulate_setar,
-        trainer_eligible=False,
+        track="Both / other",
+        trainer_eligible=True,
     ),
     Model(
         key="markov_switch",
@@ -50,7 +52,8 @@ MODELS = [
         tell="Persistent hidden variance regimes make the squared-returns ACF look GARCH-like "
              "— but the state is latent, not a deterministic recursion.",
         simulate=simulate_markov_switch,
-        trainer_eligible=False,
+        track="Both / other",
+        trainer_eligible=True,
         demo=demo_markov,
     ),
     Model(

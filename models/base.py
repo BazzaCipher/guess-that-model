@@ -40,6 +40,7 @@ TRACKS = [
     "Conditional mean",
     "Volatility",
     "Realised volatility",
+    "Both / other",
 ]
 
 

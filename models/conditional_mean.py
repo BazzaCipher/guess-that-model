@@ -95,7 +95,8 @@ MODELS = [
         tell="Two genuine layers: returns ACF shows AR(1) decay AND the squared-return ACF "
              "persists more than rho^2 alone would give (real GARCH clustering on top).",
         simulate=simulate_ar1_garch11,
-        trainer_eligible=False,
+        track="Both / other",
+        trainer_eligible=True,
     ),
     Model(
         key="midas",

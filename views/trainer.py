@@ -13,11 +13,24 @@ import streamlit as st
 from models import random_round_in, track_models, tracks
 from plots import acf_pacf_fig, series_fig
 
-# track -> (extract the process array from a SimResult, correlogram label)
+def _panels_other(r):
+    """Mixed track — show every correlogram that exists for this series."""
+    panels = [(r.series, r.series_label)]
+    if r.target_sq is not None:
+        panels.append((r.target_sq, "squared returns"))
+    if r.target_rv is not None:
+        panels.append((r.target_rv, "RV"))
+    return panels
+
+
+# track -> function(SimResult) -> list of (process array, correlogram label).
+# Each track shows the ACF/PACF of its defining stochastic process; the mixed
+# "Both / other" track shows all available panels.
 TRACK_VIEW = {
-    "Conditional mean": (lambda r: r.series, lambda r: r.series_label),
-    "Volatility": (lambda r: r.target_sq, lambda r: "squared returns"),
-    "Realised volatility": (lambda r: r.target_rv, lambda r: "realised variance"),
+    "Conditional mean": lambda r: [(r.series, r.series_label)],
+    "Volatility": lambda r: [(r.target_sq, "squared returns")],
+    "Realised volatility": lambda r: [(r.target_rv, "realised variance")],
+    "Both / other": _panels_other,
 }
 
 
@@ -66,18 +79,18 @@ def render() -> None:
         _new_round(track, nobs)
 
     result = st.session_state["round"]
-    get_proc, get_label = TRACK_VIEW[track]
-    proc, label = get_proc(result), get_label(result)
+    panels = TRACK_VIEW[track](result)
 
     # -- series path --
     st.subheader("Simulated series")
     st.pyplot(series_fig(result.series, title=result.series_label),
               clear_figure=True, width="stretch")
 
-    # -- ACF / PACF of the track's stochastic process --
-    st.subheader(f"ACF / PACF — {label}")
-    st.pyplot(acf_pacf_fig(proc, label=label, lags=lags),
-              clear_figure=True, width="stretch")
+    # -- ACF / PACF of the track's stochastic process(es) --
+    st.subheader("ACF / PACF")
+    for proc, label in panels:
+        st.pyplot(acf_pacf_fig(proc, label=label, lags=lags),
+                  clear_figure=True, width="stretch")
 
     # -- guess (among this track's models only) --
     st.subheader("Your guess")
