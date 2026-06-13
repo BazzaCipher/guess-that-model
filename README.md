@@ -30,7 +30,7 @@ Live: <https://guess-that-model.bazza.space>
 | Conditional mean | White noise, MA(q), AR(p), ARMA(p,q), ARIMA (unit root), AR(1)-GARCH, MIDAS, single-index/market model |
 | Structural instability | Unit root + breaks, SETAR (threshold AR), Markov regime-switching, Bai-Perron breakpoints |
 | Univariate volatility | ARCH(q), GARCH(p,q), GJR/TARCH, EGARCH, GARCH-t, APARCH, GARCH-M, IGARCH, FIGARCH, *GARCH-MIDAS* |
-| Realised vol & long memory | HAR-RV, HAR-RV-J, ARMA on log RV, ARFIMA |
+| Realised vol & long memory | Realised-volatility estimator (intraday squared returns + signature plot), HAR-RV, HAR-RV-J, ARMA on log RV, ARFIMA |
 | Multivariate GARCH | vech / diagonal vech, BEKK, CCC, DCC, realised covariance (MHAR/VARFIMA), Cholesky |
 | Portfolio VaR | delta-normal, delta-gamma, historical simulation, Monte Carlo (const + GARCH), incremental/marginal/component, ETL, mapping (single-index/PCA/OGARCH) |
 | Tail & extreme | EVT-GPD (POT), McNeil-Frey, copulas (Gaussian/t/Gumbel), *vine copulas*, *Oh-Patton factor copula* |

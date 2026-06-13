@@ -1,6 +1,7 @@
 """Realised volatility & long-memory models."""
 from __future__ import annotations
 
+from demos.realised_vol import demo_rv_estimator
 from models.base import Model
 from simulators import (
     simulate_arfima_rv,
@@ -10,6 +11,20 @@ from simulators import (
 )
 
 MODELS = [
+    Model(
+        key="rv_estimator",
+        name="Realised volatility estimator",
+        category="Realised vol & long memory",
+        equation=r"RV_t = \sum_{j=1}^{M} r_{t,j}^2 \;\xrightarrow{M\to\infty}\; "
+                 r"\int_{t-1}^{t}\sigma^2(s)\,ds",
+        summary="The estimator the whole block is built on: sum a day's squared intraday "
+                "returns to estimate its integrated variance. RV is then treated as an "
+                "observable series and modelled directly (HAR, ARFIMA, ARMA).",
+        tell="Consistent for integrated variance as sampling rises — but microstructure noise "
+             "adds ~2Mω² of upward bias, so the volatility-signature plot slopes up at the "
+             "highest frequencies (motivating ~5-minute sampling).",
+        demo=demo_rv_estimator,
+    ),
     Model(
         key="har_rv",
         name="HAR-RV (Corsi)",
