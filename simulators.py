@@ -297,8 +297,14 @@ def simulate_arma_pq(rng: np.random.Generator, nobs: int) -> SimResult:
     q = int(rng.integers(1, 3))
     pacf = rng.uniform(-0.4, 0.6, size=p)
     pacf[0] = float(rng.uniform(0.35, 0.7))
-    phi = gen.ar_from_pacf(pacf)
-    theta = rng.uniform(-0.6, 0.6, size=q)
+    phi = gen.ar_from_pacf(pacf)  # phi[0] > 0 by construction
+    # The MA part must stay *visible* or the round is mislabelled: a near-zero
+    # theta1 leaves a pure AR(p) (PACF cuts at p), and theta1 ~= -phi1 cancels
+    # the AR root, collapsing ARMA(1,1) toward white noise. So give theta1 a
+    # guaranteed magnitude and keep it out of the cancellation zone.
+    theta = rng.uniform(0.4, 0.7, size=q) * rng.choice([-1.0, 1.0], size=q)
+    if abs(float(phi[0]) + float(theta[0])) < 0.45:
+        theta[0] = -theta[0]  # flip away from phi1 + theta1 ~= 0 (root cancellation)
     sigma = float(rng.uniform(0.8, 1.4))
     burn = 200
     eps = rng.normal(0.0, sigma, nobs + burn)
@@ -309,7 +315,10 @@ def simulate_arma_pq(rng: np.random.Generator, nobs: int) -> SimResult:
         target_rv=None,
         family="Mean",
         name="ARMA(p,q) returns",
-        params={"p": p, "q": q, "sigma": sigma},
+        params={"p": p, "q": q,
+                **{f"phi{j+1}": round(float(phi[j]), 3) for j in range(p)},
+                **{f"theta{j+1}": round(float(theta[j]), 3) for j in range(q)},
+                "sigma": sigma},
         hint="Mixed AR+MA: both the returns ACF and PACF tail off (neither cuts cleanly) — "
              "the ARMA signature.",
     )
