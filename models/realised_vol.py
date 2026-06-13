@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 from models.base import Model
-from simulators import simulate_arma11_rv, simulate_har_rv, simulate_har_rv_j
+from simulators import (
+    simulate_arfima_rv,
+    simulate_arma11_rv,
+    simulate_har_rv,
+    simulate_har_rv_j,
+)
 
 MODELS = [
     Model(
@@ -46,4 +51,18 @@ MODELS = [
         simulate=simulate_arma11_rv,
         trainer_eligible=True,
     ),
+    Model(
+        key="arfima_rv",
+        name="ARFIMA on log RV",
+        category="Realised vol & long memory",
+        family="HAR",
+        equation=r"(1-L)^d\,(\ln RV_t - \mu) = \varepsilon_t",
+        summary="Fractionally-integrated ARMA on log realised variance — genuine long memory "
+                "(0<d<½), the model HAR is a practical approximation to.",
+        tell="The RV ACF decays hyperbolically and stays positive for hundreds of lags — "
+             "smoother than HAR's distinct day/week/month PACF spikes.",
+        simulate=simulate_arfima_rv,
+        trainer_eligible=False,
+    ),
 ]
+

@@ -21,16 +21,26 @@ def _sample(key: str, nobs: int, seed: int):
     return BY_KEY[key].simulate(rng, nobs=nobs)
 
 
-def _sample_expander(key: str) -> None:
-    with st.expander("Sample a path"):
-        res = _sample(key, nobs=2_500, seed=0)
-        st.pyplot(series_fig(res.series, title=res.series_label),
-                  clear_figure=True, width="stretch")
-        target = res.target_sq if res.target_sq is not None else res.target_rv
-        label = "squared returns" if res.target_sq is not None else "RV"
-        if target is not None:
-            st.pyplot(acf_pacf_fig(target, label=label, lags=30),
-                      clear_figure=True, width="stretch")
+def _sample_path(key: str) -> None:
+    """Lazily render a sample path + correlogram (only when the toggle is on).
+
+    Gated by a toggle rather than an expander because Streamlit executes an
+    expander's body on every rerun regardless of its collapsed state — which
+    would simulate every model on each page load.
+    """
+    if not st.toggle("Sample a path", key=f"samp_{key}"):
+        return
+    res = _sample(key, nobs=2_500, seed=0)
+    st.pyplot(series_fig(res.series, title=res.series_label),
+              clear_figure=True, width="stretch")
+    if res.target_sq is not None:
+        target, label = res.target_sq, "squared returns"
+    elif res.target_rv is not None:
+        target, label = res.target_rv, "RV"
+    else:  # level / integrated series — inspect the series itself
+        target, label = res.series, res.series_label
+    st.pyplot(acf_pacf_fig(target, label=label, lags=30),
+              clear_figure=True, width="stretch")
 
 
 def _card(model) -> None:
@@ -54,10 +64,10 @@ def _card(model) -> None:
         if model.references:
             st.caption(" · ".join(model.references))
         if model.demo is not None:
-            with st.expander("Interactive demo"):
+            if st.toggle("Interactive demo", key=f"demo_{model.key}"):
                 model.demo()
         elif model.simulate is not None:
-            _sample_expander(model.key)
+            _sample_path(model.key)
 
 
 def render() -> None:

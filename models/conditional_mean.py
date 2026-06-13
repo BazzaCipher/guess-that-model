@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from models.base import Model
 from simulators import (
-    simulate_ar1,
     simulate_ar1_garch11,
-    simulate_arma11,
+    simulate_ar_p,
+    simulate_arima,
+    simulate_arma_pq,
+    simulate_ma_q,
     simulate_white_noise,
 )
 
@@ -24,29 +26,54 @@ MODELS = [
         trainer_eligible=True,
     ),
     Model(
-        key="ar1",
-        name="AR(1) returns",
+        key="ma_q",
+        name="MA(q) returns",
         category="Conditional mean",
         family="Mean",
-        equation=r"r_t = \phi\, r_{t-1} + \varepsilon_t",
-        summary="First-order autoregression in the mean: today's return loads on "
-                "yesterday's.",
-        tell="Returns ACF decays geometrically while the PACF cuts off after lag 1; the "
-             "squared-return ACF only echoes it as ~rho^2 (a trap for 'looks like GARCH').",
-        simulate=simulate_ar1,
+        equation=r"r_t = \varepsilon_t + \theta_1\varepsilon_{t-1} + \dots + "
+                 r"\theta_q\varepsilon_{t-q}",
+        summary="Moving-average mean model: today's return is a weighted sum of the last q "
+                "shocks.",
+        tell="The returns ACF cuts off sharply after lag q while the PACF tails off — the "
+             "mirror image of AR.",
+        simulate=simulate_ma_q,
         trainer_eligible=True,
     ),
     Model(
-        key="arma11",
-        name="ARMA(1,1) returns",
+        key="ar_p",
+        name="AR(p) returns",
         category="Conditional mean",
         family="Mean",
-        equation=r"r_t = \phi\, r_{t-1} + \varepsilon_t + \theta\, \varepsilon_{t-1}",
-        summary="Autoregressive + moving-average mean dynamics — the workhorse linear "
-                "mean model.",
+        equation=r"r_t = \phi_1 r_{t-1} + \dots + \phi_p r_{t-p} + \varepsilon_t",
+        summary="Autoregression in the mean: today's return loads on its own recent history.",
+        tell="The returns PACF cuts off after lag p while the ACF tails off geometrically.",
+        simulate=simulate_ar_p,
+        trainer_eligible=True,
+    ),
+    Model(
+        key="arma_pq",
+        name="ARMA(p,q) returns",
+        category="Conditional mean",
+        family="Mean",
+        equation=r"r_t = \sum_{i=1}^p \phi_i r_{t-i} + \varepsilon_t + "
+                 r"\sum_{j=1}^q \theta_j \varepsilon_{t-j}",
+        summary="Autoregressive + moving-average mean dynamics — the core linear mean model.",
         tell="Both the returns ACF and PACF tail off (neither cuts cleanly) — the ARMA "
              "signature.",
-        simulate=simulate_arma11,
+        simulate=simulate_arma_pq,
+        trainer_eligible=True,
+    ),
+    Model(
+        key="arima",
+        name="ARIMA (unit root)",
+        category="Conditional mean",
+        family="Mean",
+        equation=r"(1-L)\,r_t = \phi\,(1-L)\,r_{t-1} + \varepsilon_t",
+        summary="An integrated I(1) series: non-stationary in levels, stationary after "
+                "differencing once. The differencing 'd' in ARIMA(p,d,q).",
+        tell="The level wanders like a random walk and its ACF decays almost linearly (near "
+             "unit root); one difference makes it stationary.",
+        simulate=simulate_arima,
         trainer_eligible=True,
     ),
     Model(

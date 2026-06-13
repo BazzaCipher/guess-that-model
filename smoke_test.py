@@ -11,8 +11,13 @@ import numpy as np
 
 
 def check_registry() -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     from models import REGISTRY, TRAINER_MODELS, SIMULATORS, FAMILY_OF, families
     from models.base import CATEGORIES
+    from plots import acf_pacf_fig, series_fig
 
     assert REGISTRY, "empty registry"
 
@@ -25,20 +30,31 @@ def check_registry() -> None:
         assert (m.simulate is not None) or (m.demo is not None), \
             f"{m.name}: neither simulate nor demo"
 
-    # every trainer simulator returns a finite, correctly-sized SimResult
+    # every simulate-bearing model: finite across sizes, plots without error
+    sim_models = [m for m in REGISTRY if m.simulate is not None]
     rng = np.random.default_rng(0)
-    for m in TRAINER_MODELS:
-        for nobs in (500, 2500):
+    for m in sim_models:
+        for nobs in (500, 2500, 10000):
             res = m.simulate(rng, nobs=nobs)
             assert res.series.shape[0] == nobs, f"{m.name}: wrong length"
-            assert np.isfinite(res.series).all(), f"{m.name}: non-finite series"
-            assert res.family == m.family, f"{m.name}: family mismatch"
+            assert np.isfinite(res.series).all(), f"{m.name}: non-finite (n={nobs})"
+            if m.family:
+                assert res.family == m.family, f"{m.name}: family mismatch"
+        # exercise the plot helpers on the smallest sample (incl. level series)
+        res = m.simulate(rng, nobs=500)
+        plt.close(series_fig(res.series, title=res.series_label))
+        target = res.target_sq if res.target_sq is not None else (
+            res.target_rv if res.target_rv is not None else res.series)
+        plt.close(acf_pacf_fig(target, label="x", lags=20))
 
     assert set(SIMULATORS) == {m.name for m in TRAINER_MODELS}
     assert set(FAMILY_OF) == set(SIMULATORS)
     assert families(), "no families"
-    print(f"  registry OK — {len(REGISTRY)} models, {len(TRAINER_MODELS)} trainer-eligible, "
-          f"families={families()}")
+    n_inv_only = len(sim_models) - len(TRAINER_MODELS)
+    print(f"  registry OK — {len(REGISTRY)} models "
+          f"({len(TRAINER_MODELS)} trainer, {n_inv_only} inventory-only sim, "
+          f"{len(REGISTRY) - len(sim_models)} demo-only)")
+    print(f"  families: {families()}")
 
 
 def _run_view(module: str):

@@ -88,37 +88,40 @@ def render() -> None:
     panels: list[tuple[np.ndarray, str]] = []
     returns_available = result.target_sq is not None
     rv_available = result.target_rv is not None
+    # A level/integrated series (e.g. ARIMA, unit-root+breaks) carries neither a
+    # squared nor an RV target — the series itself is the object to inspect.
+    level_only = not returns_available and not rv_available
 
-    if view_mode.startswith("Default"):
+    if view_mode.startswith("Default") or view_mode.startswith("Auto"):
+        if level_only:
+            panels.append((result.series, result.series_label))
         if returns_available:
-            panels.append((result.series, "returns"))
+            if view_mode.startswith("Default"):
+                panels.append((result.series, "returns"))
             panels.append((result.target_sq, "squared returns"))
         if rv_available:
             panels.append((result.target_rv, "RV"))
     elif view_mode == "Returns only":
         if returns_available:
             panels.append((result.series, "returns"))
+        elif level_only:
+            panels.append((result.series, result.series_label))
         else:
             st.warning("This round produced an RV-style series; returns view does not apply.")
     elif view_mode == "Squared returns only":
         if returns_available:
             panels.append((result.target_sq, "squared returns"))
         else:
-            st.warning("This round produced an RV-style series; squared returns do not apply.")
+            st.warning("This round produced a level/RV series; squared returns do not apply.")
     elif view_mode == "RV only":
         if rv_available:
             panels.append((result.target_rv, "RV"))
         else:
-            st.warning("This round produced a returns series; RV view does not apply.")
-    elif view_mode.startswith("Auto"):
-        if returns_available:
-            panels.append((result.target_sq, "squared returns"))
-        if rv_available:
-            panels.append((result.target_rv, "RV"))
+            st.warning("This round produced a returns/level series; RV view does not apply.")
 
     for y, lbl in panels:
         st.pyplot(acf_pacf_fig(y, label=lbl, lags=lags), clear_figure=True,
-                  use_container_width=True)
+                  width="stretch")
 
     # -- guess --
     st.subheader("Your guess")
