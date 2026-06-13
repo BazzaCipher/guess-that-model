@@ -1,6 +1,7 @@
 """Tail & extreme-risk models — EVT, McNeil-Frey, copulas."""
 from __future__ import annotations
 
+from demos.beyond_course import demo_factor_copula, demo_vine_copula
 from demos.tail import demo_copulas, demo_evt_gpd, demo_mcneil_frey
 from models.base import Model
 
@@ -39,5 +40,29 @@ MODELS = [
         tell="Gaussian has zero tail dependence, Student-t symmetric tail dependence, Gumbel "
              "upper-tail only — the choice changes joint-crash probability dramatically.",
         demo=demo_copulas,
+    ),
+    Model(
+        key="vine_copula",
+        name="Vine copulas",
+        category=_CAT,
+        equation=r"c_{1\dots d} = \prod_{\text{edges}} c_{ij\mid D}\big(\cdot\big)",
+        summary="Build high-dimensional dependence as a cascade of bivariate pair-copulas in "
+                "trees — each edge a different family, so tails are modelled pair by pair.",
+        tell="Decomposes a joint copula into conditional pair-copulas; flexible but the tree "
+             "structure and family choices proliferate.",
+        beyond_course=True,
+        demo=demo_vine_copula,
+    ),
+    Model(
+        key="factor_copula",
+        name="Oh-Patton factor copula",
+        category=_CAT,
+        equation=r"X_i = \beta_i Z + \varepsilon_i,\qquad Z,\varepsilon_i \sim t_\nu",
+        summary="Generates dependence from a few common latent factors plus idiosyncratic "
+                "noise — scalable to many assets, with tail dependence from a fat-tailed factor.",
+        tell="A common factor drives joint moves; a fat-tailed factor creates the joint-crash "
+             "(tail) dependence a Gaussian factor would miss.",
+        beyond_course=True,
+        demo=demo_factor_copula,
     ),
 ]

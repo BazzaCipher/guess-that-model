@@ -1,6 +1,7 @@
 """Univariate volatility (GARCH-family) models."""
 from __future__ import annotations
 
+from demos.beyond_course import demo_midas_garch
 from models.base import Model
 from simulators import (
     simulate_aparch,
@@ -150,6 +151,20 @@ MODELS = [
              "slower than GARCH's geometric decay but faster than IGARCH's near-flat one.",
         simulate=simulate_figarch,
         trainer_eligible=False,
+    ),
+    Model(
+        key="midas_garch",
+        name="GARCH-MIDAS",
+        category="Univariate volatility",
+        family="GARCH",
+        equation=r"\sigma_t^2 = \tau_t \cdot g_t,\quad "
+                 r"\tau_t = m + \theta\!\sum_{k} \varphi_k(\omega)\,RV_{t-k}",
+        summary="Engle-Ghysels-Sohn two-component variance: a short-run GARCH g_t around a "
+                "long-run MIDAS component τ_t built from realised variance.",
+        tell="Volatility oscillates around a slow-moving secular level driven by "
+             "macro/realised-variance information at a lower frequency.",
+        beyond_course=True,
+        demo=demo_midas_garch,
     ),
 ]
 
