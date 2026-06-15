@@ -68,6 +68,7 @@ def _run_view(module: str):
 def check_tracks() -> None:
     import numpy as np
     from models import track_models, tracks
+    from reports import spec_tests
     from views.trainer import TRACK_VIEW
 
     rng = np.random.default_rng(0)
@@ -85,8 +86,48 @@ def check_tracks() -> None:
             for proc, _label in panels:
                 assert proc is not None and np.isfinite(proc).all(), \
                     f"{m.name}: track {t!r} panel is None/non-finite"
+            # the named specification tests must compute cleanly and read sanely
+            rows = spec_tests(res, t)
+            assert rows, f"{m.name}: track {t!r} produced no spec tests"
+            for row in rows:
+                assert set(row) == {"Test", "Statistic", "df", "p-value", "Reading"}, \
+                    f"{m.name}: spec-test row has unexpected keys {set(row)}"
+                pval = float(row["p-value"])
+                assert 0.0 <= pval <= 1.0, f"{m.name}: bad p-value {pval}"
         total += len(ms)
-    print(f"  tracks OK — {len(ts)} tracks {ts}, {total} models")
+    print(f"  tracks OK — {len(ts)} tracks {ts}, {total} models (+ spec tests)")
+
+
+def check_diagnose() -> None:
+    """The 'Diagnose the output' mode: every case builds a self-consistent round
+    (text + two MCQs whose options contain the right answer), and the view
+    renders + submits without exception."""
+    import numpy as np
+    from reports import diagnose_round, PROBLEMS, FIXES
+
+    rng = np.random.default_rng(0)
+    seen_problems = set()
+    for _ in range(40):  # enough draws to hit all four cases
+        r = diagnose_round(rng)
+        assert r["text"].strip(), "diagnose: empty EViews text"
+        assert r["problem"] in PROBLEMS and r["fix"] in FIXES, "diagnose: answer off-pool"
+        assert r["problem"] in r["problem_options"], "diagnose: correct problem not offered"
+        assert r["fix"] in r["fix_options"], "diagnose: correct fix not offered"
+        assert len(r["problem_options"]) == 4 == len(r["fix_options"]), "diagnose: wrong option count"
+        assert len(set(r["problem_options"])) == 4, "diagnose: duplicate problem options"
+        seen_problems.add(r["problem"])
+
+    # render the page and click through a submit
+    at = _run_view("diagnose")
+    assert not at.exception, f"diagnose view: {at.exception}"
+    for b in at.button:
+        if b.label == "Submit":
+            b.click()
+            at.run()
+            break
+    assert not at.exception, f"diagnose after submit: {at.exception}"
+    assert at.session_state["dx_attempted"] == 1, "diagnose: submit did not register"
+    print(f"  diagnose OK — {len(seen_problems)} case types, round build + view submit clean")
 
 
 def check_apptest() -> None:
@@ -157,6 +198,7 @@ if __name__ == "__main__":
     try:
         check_registry()
         check_tracks()
+        check_diagnose()
         check_apptest()
         check_demos()
         check_explorer_pages()

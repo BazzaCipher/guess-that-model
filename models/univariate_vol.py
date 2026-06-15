@@ -116,7 +116,8 @@ MODELS = [
         tell="The fitted power delta differs from 2 and the news-impact curve is asymmetric "
              "(negative shocks raise vol more).",
         simulate=simulate_aparch,
-        trainer_eligible=False,
+        track="Volatility",
+        trainer_eligible=True,
     ),
     Model(
         key="garch_m",
@@ -130,7 +131,8 @@ MODELS = [
         tell="Not visible in the ACF/PACF alone — the giveaway is that the return level drifts "
              "up during high-volatility spells (co-movement of mean and variance).",
         simulate=simulate_garch_m,
-        trainer_eligible=False,
+        track="Volatility",
+        trainer_eligible=True,
     ),
     Model(
         key="igarch",
@@ -142,7 +144,8 @@ MODELS = [
                 "shocks are permanent (the RiskMetrics EWMA is the omega=0 case).",
         tell="The squared-returns ACF barely decays — it behaves like a unit root in variance.",
         simulate=simulate_igarch,
-        trainer_eligible=False,
+        track="Volatility",
+        trainer_eligible=True,
     ),
     Model(
         key="figarch",
@@ -156,7 +159,8 @@ MODELS = [
         tell="The squared-returns ACF decays hyperbolically (slowly, like a power law) — "
              "slower than GARCH's geometric decay but faster than IGARCH's near-flat one.",
         simulate=simulate_figarch,
-        trainer_eligible=False,
+        track="Volatility",
+        trainer_eligible=True,
     ),
     Model(
         key="midas_garch",

@@ -80,7 +80,8 @@ MODELS = [
         tell="The RV ACF decays hyperbolically and stays positive for hundreds of lags — "
              "smoother than HAR's distinct day/week/month PACF spikes.",
         simulate=simulate_arfima_rv,
-        trainer_eligible=False,
+        track="Realised volatility",
+        trainer_eligible=True,
     ),
 ]
 

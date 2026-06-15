@@ -10,7 +10,7 @@ import subprocess
 
 import streamlit as st
 
-from views import explorers, inventory, trainer
+from views import diagnose, explorers, inventory, trainer
 
 st.set_page_config(page_title="Econometrics model trainer", layout="wide")
 
@@ -27,7 +27,10 @@ def _commit_sha() -> str:
 
 pages = st.navigation(
     {
-        "Play": [st.Page(trainer.render, title="Trainer", icon="🎯", url_path="trainer")],
+        "Play": [
+            st.Page(trainer.render, title="Trainer", icon="🎯", url_path="trainer"),
+            st.Page(diagnose.render, title="Diagnose", icon="🔧", url_path="diagnose"),
+        ],
         "Reference": [st.Page(inventory.render, title="Inventory", icon="📚", url_path="inventory")],
         "Explore": explorers.pages(),
     }

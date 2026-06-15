@@ -18,7 +18,7 @@ from plots import (
     series_fig,
     vol_overlay_fig,
 )
-from reports import diagnostic_tells, estimation_report
+from reports import diagnostic_tells, estimation_report, spec_tests
 
 def _panels_other(r):
     """Mixed track — show every correlogram that exists for this series."""
@@ -101,9 +101,23 @@ def render() -> None:
 
     # -- pre-guess diagnostics: the numbers you need to actually decide --
     # All computed from the observable series (no hidden parameters), so it is
-    # fair to show them before guessing. For volatility, the squared-returns
-    # ACF/PACF can't reveal leverage (GJR/EGARCH) or fat tails (Student-t) — the
-    # cross-correlation and kurtosis below are what separate those look-alikes.
+    # fair to show them before guessing.
+
+    # The named specification tests for this track — the ones you'd actually run
+    # at this stage: Ljung-Box on the series for a mean model, on squared returns
+    # for a volatility model, on log RV for a realised-vol model; plus ARCH-LM,
+    # Jarque-Bera and (realised vol) ADF where they belong.
+    rows = spec_tests(result, track)
+    if rows:
+        st.subheader("Specification tests")
+        st.caption("Run on the series you can see. Nothing is fitted yet, so "
+                   "Ljung-Box uses df = m; on a fitted model you'd run it on the "
+                   "standardised residuals and subtract the estimated parameters.")
+        st.table(rows)
+
+    # For volatility, the squared-returns ACF/PACF can't reveal leverage
+    # (GJR/EGARCH) or fat tails (Student-t) — the cross-correlation and kurtosis
+    # below are what separate those look-alikes.
     if track in ("Volatility", "Realised volatility"):
         if track == "Volatility":
             st.subheader("Leverage diagnostic")
