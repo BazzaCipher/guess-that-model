@@ -107,7 +107,7 @@ def check_diagnose() -> None:
 
     rng = np.random.default_rng(0)
     seen_problems = set()
-    for _ in range(40):  # enough draws to hit all four cases
+    for _ in range(80):  # enough draws to hit all five cases (incl. Engle-Ng leverage)
         r = diagnose_round(rng)
         assert r["text"].strip(), "diagnose: empty EViews text"
         assert r["problem"] in PROBLEMS and r["fix"] in FIXES, "diagnose: answer off-pool"
@@ -116,6 +116,7 @@ def check_diagnose() -> None:
         assert len(r["problem_options"]) == 4 == len(r["fix_options"]), "diagnose: wrong option count"
         assert len(set(r["problem_options"])) == 4, "diagnose: duplicate problem options"
         seen_problems.add(r["problem"])
+    assert len(seen_problems) == 5, f"diagnose: only saw {len(seen_problems)} case types"
 
     # render the page and click through a submit
     at = _run_view("diagnose")

@@ -299,6 +299,27 @@ def _stat_adf(x):
     return float(stat), float(p)
 
 
+def _stat_engle_ng(z):
+    """Engle-Ng (1993) joint sign-bias test on standardised residuals ẑ.
+
+    Regress ẑ_t² on a constant, the lagged negative-return dummy S⁻_{t-1},
+    and the size terms S⁻_{t-1}·ẑ_{t-1} and S⁺_{t-1}·ẑ_{t-1}. Under symmetry
+    the three slopes are jointly zero, so T·R² ~ χ²(3); a rejection says
+    negative and positive shocks move next-period variance differently
+    (leverage) — which a symmetric GARCH cannot capture.
+    """
+    import statsmodels.api as sm
+    from scipy import stats
+
+    z = _finite(z)
+    zt, zl = z[1:], z[:-1]
+    sneg = (zl < 0).astype(float)
+    X = np.column_stack([np.ones_like(zt), sneg, sneg * zl, (1.0 - sneg) * zl])
+    res = sm.OLS(zt ** 2, X).fit()
+    stat = float(len(zt) * res.rsquared)
+    return stat, float(stats.chi2.sf(stat, 3))
+
+
 def _diag_line(name, stat_p):
     stat, p = stat_p
     return f"  {name:<30}{stat:11.2f}    p = {p:.3f}"
@@ -373,7 +394,46 @@ def _case_unitroot(rng):
         "residuals). Difference it / model the returns (ARIMA).")
 
 
-_DIAGNOSE_CASES = (_case_arch, _case_autocorr, _case_fattails, _case_unitroot)
+def _case_leverage(rng):
+    """Asymmetric data (GJR) fitted with a SYMMETRIC GARCH(1,1): the variance
+    clustering is soaked up — Q(ẑ²) and ARCH-LM are clean — but the Engle-Ng
+    sign-bias test still rejects, because negative shocks raise tomorrow's
+    variance more than positive ones. The fix is GJR / EGARCH."""
+    from arch.univariate import GARCH, Normal, ZeroMean
+
+    from models import SIMULATORS
+
+    # Regenerate until the symmetric fit's Engle-Ng test clearly rejects (stat
+    # past the χ²(3) 5% critical value, 7.81), so the stated answer can never
+    # contradict the printed footer. At n=6000 the first draw almost always passes.
+    res = z = None
+    for _ in range(6):
+        r = np.asarray(SIMULATORS["GJR-GARCH(1,1)"](rng, nobs=6000).series, float)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = ZeroMean(r, volatility=GARCH(p=1, q=1), distribution=Normal()).fit(
+                disp="off", show_warning=False)
+        z = np.asarray(res.std_resid)
+        if _stat_engle_ng(z)[0] > 9.0:
+            break
+    diag = ["", "Residual diagnostics (standardised residuals ẑ = ε̂/σ̂)", "=" * 60,
+            _diag_line("Ljung-Box  Q(10)  z_hat", _stat_lb(z, 10)),
+            _diag_line("Ljung-Box  Q(10)  z_hat^2", _stat_lb(z ** 2, 10)),
+            _diag_line("ARCH-LM(10)  T*R^2", _stat_arch(z, 10)),
+            _diag_line("Engle-Ng sign-bias  T*R^2 ~chi2(3)", _stat_engle_ng(z))]
+    title = ("Dependent Variable: R    Method: ML — symmetric GARCH(1,1) Normal\n"
+             + "=" * 60)
+    text = f"{title}\n{res.summary().as_text()}\n" + "\n".join(diag)
+    return text, P_LEVERAGE, F_GJR, (
+        "Q(ẑ²) and ARCH-LM are fine — a symmetric GARCH(1,1) has soaked up the "
+        "volatility clustering — but the **Engle-Ng sign-bias test rejects** at "
+        "χ²(3): negative shocks raise next-day variance more than positive ones of "
+        "the same size. A symmetric GARCH can't represent that asymmetry, so re-fit "
+        "with GJR-GARCH or EGARCH (the leverage effect).")
+
+
+_DIAGNOSE_CASES = (_case_arch, _case_autocorr, _case_fattails, _case_unitroot,
+                   _case_leverage)
 
 
 def _options(correct, pool, rng, k=4):
