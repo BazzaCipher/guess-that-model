@@ -1,5 +1,5 @@
 """Risk quiz — dynamic rounds for VaR backtesting, multivariate-GARCH choice,
-and tail / extreme-risk reasoning.
+tail / extreme-risk reasoning and forecast evaluation.
 
 Pure logic (no Streamlit).  Each generator returns a round dict::
 
@@ -7,16 +7,21 @@ Pure logic (no Streamlit).  Each generator returns a round dict::
      "questions": [{"prompt": str, "options": [str, ...], "answer": str}, ...],
      "why": str}
 
-The numbers in ``text`` are computed from freshly simulated data every call —
-the Kupiec/Christoffersen statistics, the MGARCH parameter counts, the Hill tail
-index and the copula joint-exceedance counts are all real — so each round is a
-reading exercise rather than a memorised card.  ``views/risk.py`` renders it.
+Design rule (mirrors the Diagnose mode): the scenario ``text`` shows only the
+*computed numbers* — statistics, p-values, parameter counts, correlations — and
+bare factual givens.  No interpretation, no verdict words, and nothing that
+names or hints the right answer.  Every reading ("ξ>0 ⇒ power-law tail", "JB
+rejects normality", which model to use and why) lives in ``why`` and is revealed
+only after the pick.  The numbers are simulated fresh each call, and where the
+stated answer depends on a statistic the round resamples until the printed
+numbers actually support it — so the reveal can never contradict the figures.
+``views/risk.py`` renders it.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from reports import _options  # shared option-shuffler (keeps the 4-option style)
+from reports import _options, _stat_arch, _stat_jb, _stat_lb  # shared helpers
 
 
 def _q(prompt: str, answer: str, pool, rng) -> dict:
@@ -26,16 +31,16 @@ def _q(prompt: str, answer: str, pool, rng) -> dict:
 # ===========================================================================
 # VaR backtesting — Kupiec (unconditional coverage) + Christoffersen (independence)
 # ===========================================================================
-P_OK = "Adequate — both the exception rate and their timing look fine"
-P_TOOMANY = "Too many exceptions — VaR is breached more than α (fails unconditional coverage)"
-P_TOOFEW = "Too few exceptions — VaR is too conservative (it over-covers)"
-P_CLUSTER = "Exceptions cluster in time — the count is fine but independence fails"
+P_OK = "Adequate — the exception rate and their timing are both fine"
+P_TOOMANY = "Too many exceptions — the VaR is breached more often than α allows"
+P_TOOFEW = "Too few exceptions — the VaR is too conservative and over-covers"
+P_CLUSTER = "Exceptions cluster in time — the count is fine but they bunch together"
 VAR_PROBLEMS = [P_OK, P_TOOMANY, P_TOOFEW, P_CLUSTER]
 
-F_OK = "Nothing — it passes both Kupiec and Christoffersen"
+F_OK = "Nothing — leave it as is"
 F_TOOMANY = "VaR sits too low — refit with fatter tails (Student-t / EVT)"
 F_TOOFEW = "VaR is too high — relax it so it stops tying up excess capital"
-F_CLUSTER = "Make VaR volatility-adaptive (GARCH-filtered / McNeil-Frey) so breaches stop bunching"
+F_CLUSTER = "Make VaR volatility-adaptive (GARCH-filtered / McNeil-Frey)"
 VAR_FIXES = [F_OK, F_TOOMANY, F_TOOFEW, F_CLUSTER]
 
 _CHI1, _CHI2 = 3.84, 5.99  # 5% critical values, χ²(1) and χ²(2)
@@ -91,6 +96,8 @@ def _gen_hits(rng, T: int, alpha: float, flavor: str) -> np.ndarray:
 
 
 def _var_case(rng) -> dict:
+    from scipy import stats
+
     flavor = str(rng.choice(["ok", "toomany", "toofew", "clustered"]))
     if flavor == "clustered":
         alpha, T = 0.05, int(rng.choice([600, 750, 1000]))  # need power for independence
@@ -114,6 +121,9 @@ def _var_case(rng) -> dict:
                 or (flavor == "clustered" and ind and not uc)):
             break
     lr_cc = lr_uc + lr_ind
+    p_uc, p_ind, p_cc = (float(stats.chi2.sf(lr_uc, 1)),
+                         float(stats.chi2.sf(lr_ind, 1)),
+                         float(stats.chi2.sf(lr_cc, 2)))
 
     if uc and rate > alpha:
         problem, fix = P_TOOMANY, F_TOOMANY
@@ -124,9 +134,6 @@ def _var_case(rng) -> dict:
     else:
         problem, fix = P_OK, F_OK
 
-    def v(stat, crit):
-        return "reject" if stat > crit else "ok"
-
     text = "\n".join([
         "Value-at-Risk backtest",
         "=" * 60,
@@ -135,31 +142,32 @@ def _var_case(rng) -> dict:
         f"  Expected exceptions  α·T      {alpha * T:.1f}",
         f"  Observed exceptions           {x}    (rate {rate * 100:.2f}%)",
         "",
-        "  Backtest                          stat     5% crit  verdict",
+        "  Backtest                          stat     df   p-value",
         "  " + "-" * 56,
-        f"  Kupiec          LR_uc  ~χ²(1)    {lr_uc:7.2f}    {_CHI1:5.2f}    {v(lr_uc, _CHI1)}",
-        f"  Christoffersen  LR_ind ~χ²(1)    {lr_ind:7.2f}    {_CHI1:5.2f}    {v(lr_ind, _CHI1)}",
-        f"  Christoffersen  LR_cc  ~χ²(2)    {lr_cc:7.2f}    {_CHI2:5.2f}    {v(lr_cc, _CHI2)}",
+        f"  Kupiec          LR_uc           {lr_uc:8.2f}     1   {p_uc:.3f}",
+        f"  Christoffersen  LR_ind          {lr_ind:8.2f}     1   {p_ind:.3f}",
+        f"  Christoffersen  LR_cc           {lr_cc:8.2f}     2   {p_cc:.3f}",
     ])
 
     if problem is P_CLUSTER:
         why = (f"Only {x} exceptions vs {alpha * T:.1f} expected, so Kupiec's count test "
-               f"passes (LR_uc={lr_uc:.2f} < 3.84) — but the breaches bunch together, so the "
-               f"independence test rejects (LR_ind={lr_ind:.2f} > 3.84), and LR_cc with it. "
-               "Kupiec alone would have missed this. A static VaR that clusters its breaches "
-               "needs to react to volatility (GARCH-filtered historical VaR / McNeil-Frey).")
+               f"passes (LR_uc={lr_uc:.2f}, p={p_uc:.3f}) — but the breaches bunch together, so "
+               f"the independence test rejects (LR_ind={lr_ind:.2f}, p={p_ind:.3f}), and LR_cc "
+               "with it. Kupiec alone would have missed this. A static VaR that clusters its "
+               "breaches needs to react to volatility (GARCH-filtered historical VaR / "
+               "McNeil-Frey).")
     elif problem is P_TOOMANY:
         why = (f"{x} exceptions vs {alpha * T:.1f} expected — Kupiec rejects "
-               f"(LR_uc={lr_uc:.2f} > 3.84). The VaR is breached far too often, so it sits "
-               "too low: the tail is fatter than the model assumes (go Student-t / EVT).")
+               f"(LR_uc={lr_uc:.2f}, p={p_uc:.3f}). The VaR is breached far too often, so it "
+               "sits too low: the tail is fatter than the model assumes (go Student-t / EVT).")
     elif problem is P_TOOFEW:
         why = (f"Only {x} exceptions vs {alpha * T:.1f} expected — Kupiec rejects on the low "
-               f"side (LR_uc={lr_uc:.2f} > 3.84). The VaR over-covers: safe, but it ties up "
-               "capital you don't need to reserve.")
+               f"side (LR_uc={lr_uc:.2f}, p={p_uc:.3f}). The VaR over-covers: safe, but it ties "
+               "up capital you don't need to reserve.")
     else:
-        why = (f"{x} exceptions vs {alpha * T:.1f} expected and no clustering — both "
-               f"Kupiec (LR_uc={lr_uc:.2f}) and Christoffersen (LR_cc={lr_cc:.2f}) sit under "
-               "their critical values. The model is well-calibrated; leave it.")
+        why = (f"{x} exceptions vs {alpha * T:.1f} expected and no clustering — both Kupiec "
+               f"(LR_uc={lr_uc:.2f}, p={p_uc:.3f}) and Christoffersen (LR_cc={lr_cc:.2f}, "
+               f"p={p_cc:.3f}) stay above 0.05. The model is well-calibrated; leave it.")
 
     return {"topic": "VaR backtest", "text": text,
             "questions": [_q("What does the backtest say?", problem, VAR_PROBLEMS, rng),
@@ -183,20 +191,22 @@ def _mg_feasible(rng):
     k = N * (N + 1) // 2                # distinct covariance elements
     full_vech = 2 * k * k + k           # A, B full on the vech vector ~ O(N⁴)
     diag_vech = 3 * k                   # C, A, B diagonal
+    rho_calm, rho_crisis = 0.30, float(rng.choice([0.7, 0.8, 0.9]))
     text = "\n".join([
         f"Multivariate GARCH — portfolio of N = {N} assets",
         "=" * 60,
-        f"  Free parameters, full vech       ≈ {full_vech:,}",
-        f"  Free parameters, diagonal vech   = {diag_vech:,}",
-        "  DCC dynamic parameters (a, b)    = 2     (correlation targeting)",
+        f"  Free parameters, full vech         ≈ {full_vech:,}",
+        f"  Free parameters, diagonal vech     = {diag_vech:,}",
+        f"  Univariate GARCH per asset (3 each) = {3 * N:,}",
         "",
-        "  You need a covariance you can actually estimate at this size,",
-        "  with correlations that still move through time.",
+        f"  Avg pairwise correlation, calm year   {rho_calm:.2f}",
+        f"  Avg pairwise correlation, crisis year {rho_crisis:.2f}",
     ])
     why = (f"Full vech explodes to ~{full_vech:,} parameters and even diagonal vech needs "
-           f"{diag_vech:,} — infeasible at N={N}. DCC fits each variance with a univariate "
-           "GARCH, pins the average correlation by targeting, and lets just two parameters "
-           "(a, b) drive the dynamics — scalable and still time-varying.")
+           f"{diag_vech:,} — infeasible at N={N}. CCC would scale, but the correlation moved "
+           f"({rho_calm:.2f}→{rho_crisis:.2f}), and CCC freezes it. DCC fits each variance with "
+           "a univariate GARCH, targets the average correlation, and lets just two parameters "
+           "(a, b) drive its dynamics — scalable and still time-varying.")
     return text, M_DCC, why
 
 
@@ -205,16 +215,15 @@ def _mg_constant_corr(rng):
     text = "\n".join([
         "Multivariate GARCH — model diagnostics",
         "=" * 60,
+        "  Estimated with a single, constant correlation matrix R.",
+        "",
         f"  Average pairwise correlation, calm periods   {rho0:.2f}",
         f"  Average pairwise correlation, the 2008 crash {rhoc:.2f}",
-        "",
-        "  Your current model assumes a single, fixed correlation matrix R,",
-        "  yet correlations clearly jumped when it mattered most.",
     ])
-    why = ("CCC freezes the correlation matrix — fine for the variances, fatal for the "
-           f"correlations, which spiked from {rho0:.2f} to {rhoc:.2f} in the crisis. DCC lets "
-           "the correlation evolve through a GARCH-like recursion, rising exactly when assets "
-           "co-move.")
+    why = ("The fitted model freezes the correlation matrix — fine for the variances, fatal for "
+           f"the correlations, which spiked from {rho0:.2f} to {rhoc:.2f} in the crisis. That's "
+           "CCC's blind spot; DCC lets the correlation evolve through a GARCH-like recursion, "
+           "rising exactly when assets co-move.")
     return text, M_DCC, why
 
 
@@ -223,29 +232,33 @@ def _mg_posdef(rng):
     text = "\n".join([
         f"Multivariate GARCH — {N}-asset book",
         "=" * 60,
-        "  Requirement: Σ_t guaranteed positive-definite every day,",
-        "  with NO awkward parameter constraints to impose,",
-        "  yet a genuinely time-varying covariance (not just variances).",
+        f"  Book size  N                       {N}",
+        "  Requirement: Σ_t positive-definite every day, with no",
+        "  parameter constraints imposed, and a genuinely time-",
+        "  varying covariance (not just the variances).",
     ])
     why = ("The quadratic form Σ_t = CC' + Aε_{t-1}ε_{t-1}'A' + BΣ_{t-1}B' is "
            "positive-definite by construction with no side constraints — that's BEKK. The "
            "scalar version needs only two dynamic parameters yet still moves the whole "
-           "covariance.")
+           "covariance. (Feasible only because N is small.)")
     return text, M_BEKK, why
 
 
 def _mg_realised(rng):
     freq = str(rng.choice(["5-minute", "1-minute", "10-minute"]))
+    ppd = {"5-minute": 78, "1-minute": 390, "10-minute": 39}[freq]
     text = "\n".join([
         "Multivariate GARCH — data available",
         "=" * 60,
-        f"  You have {freq} intraday prices for every asset.",
-        "  You'd rather treat the daily covariance matrix as OBSERVED and",
-        "  forecast it directly, with no latent variance recursion to filter.",
+        f"  Intraday sampling                  {freq}",
+        f"  Intraday observations per day      ≈ {ppd}",
+        "",
+        "  Goal: model the daily covariance matrix directly,",
+        "  treating it as observed rather than latent.",
     ])
-    why = (f"With {freq} data you can compute the realised covariance each day and model it "
-           "directly (multivariate HAR / VARFIMA) — the covariance is measured, not filtered "
-           "from a latent GARCH recursion.")
+    why = (f"With {freq} data (~{ppd} obs/day) you can compute the realised covariance each day "
+           "and model it directly (multivariate HAR / VARFIMA) — the covariance is measured, not "
+           "filtered from a latent GARCH recursion.")
     return text, M_RCOV, why
 
 
@@ -254,12 +267,13 @@ def _mg_baseline(rng):
     text = "\n".join([
         f"Multivariate GARCH — {N}-asset baseline",
         "=" * 60,
-        "  You want the cheapest model that still gives each asset its own",
-        "  time-varying volatility. Correlations can stay fixed for now —",
-        "  this is a quick first-pass benchmark, not the final model.",
+        f"  Book size  N                       {N}",
+        "  Goal: the cheapest model that still gives each asset",
+        "  its own time-varying volatility. Constant correlations",
+        "  are acceptable for this first-pass benchmark.",
     ])
-    why = ("CCC is the cheap baseline: a univariate GARCH per asset for the variances and one "
-           "fixed correlation matrix R. Its weakness (frozen correlations) is exactly what DCC "
+    why = ("The cheapest model that still gives each asset its own GARCH variance, with one fixed "
+           "correlation matrix R, is CCC. Its weakness (frozen correlations) is exactly what DCC "
            "later fixes — but as a first-pass benchmark it's the right call.")
     return text, M_CCC, why
 
@@ -278,11 +292,11 @@ def _mgarch_case(rng) -> dict:
 # ===========================================================================
 # Tail & extreme — which tail tool does the scenario call for?
 # ===========================================================================
-T_EVT = "Gaussian VaR understates the tail — model exceedances with EVT (POT / GPD)"
-T_TSTUD = "Returns are iid but heavy-tailed — switch the distribution to Student-t"
-T_MF = "Tail risk moves with volatility — use McNeil-Frey (GARCH, then EVT on the residuals)"
-T_COPULA = "The danger is joint crashes — use a t / Gumbel copula with tail dependence"
-T_OK = "Tails are close to normal — a Gaussian (delta-normal) VaR is adequate"
+T_EVT = "Model the tail exceedances with EVT (peaks-over-threshold / GPD)"
+T_TSTUD = "Switch the return distribution to a heavier-tailed Student-t"
+T_MF = "Use McNeil-Frey — filter with GARCH, then fit EVT to the residuals"
+T_COPULA = "Model the joint tail with a t / Gumbel copula (tail dependence)"
+T_OK = "Keep the Gaussian (delta-normal) VaR as is"
 
 
 def _garch_t(rng, n, nu=5, omega=0.05, a=0.08, b=0.90):
@@ -299,51 +313,65 @@ def _garch_t(rng, n, nu=5, omega=0.05, a=0.08, b=0.90):
 
 def _tail_undercoverage(rng):
     nu = int(rng.choice([3, 4, 5]))
-    r = rng.standard_t(nu, size=3000)
-    r = r / r.std()
     g99 = 2.326                                  # z_0.99 · σ, with σ = 1
-    emp99 = float(-np.quantile(r, 0.01))
-    breach = float(np.mean(r < -g99) * 100)
+    jb = jbp = lb = lbp = arch = archp = emp99 = breach = 0.0
+    for _ in range(25):                          # keep the printed stats self-consistent
+        r = rng.standard_t(nu, size=3000)
+        r = r / r.std()
+        jb, jbp = _stat_jb(r)
+        lb, lbp = _stat_lb(r, 10)
+        arch, archp = _stat_arch(r, 10)
+        emp99 = float(-np.quantile(r, 0.01))
+        breach = float(np.mean(r < -g99) * 100)
+        if jbp < 0.01 and lbp > 0.05 and archp > 0.05 and emp99 > g99 * 1.05:
+            break
     text = "\n".join([
-        "Single-asset tail check — iid returns (no volatility clustering)",
+        "Single-asset daily returns — 3000 days",
         "=" * 60,
-        f"  Jarque-Bera           strongly rejects normality (Student-t({nu}))",
-        "  Ljung-Box / ARCH-LM   ok  — residuals are serially clean",
+        f"  Jarque-Bera                        {jb:9.1f}    p = {jbp:.3f}",
+        f"  Ljung-Box  Q(10)  returns          {lb:9.2f}    p = {lbp:.3f}",
+        f"  ARCH-LM(10)  T·R²                   {arch:9.2f}    p = {archp:.3f}",
         "",
         f"  99% Gaussian (delta-normal) VaR    {g99:.2f}",
         f"  99% empirical VaR                  {emp99:.2f}",
-        f"  Days the Gaussian VaR is breached  {breach:.2f}%   (target 1.00%)",
+        f"  Gaussian-VaR breach rate           {breach:.2f}%    (target 1.00%)",
     ])
-    why = (f"The empirical 99% loss ({emp99:.2f}) sits well past the Gaussian VaR ({g99:.2f}), "
-           f"so the normal VaR is breached ~{breach:.1f}% of the time instead of 1%. There's no "
-           "ARCH and it's a single series, so the clean fix is a heavier-tailed conditional "
-           "distribution — Student-t.")
+    why = (f"Jarque-Bera rejects normality (p={jbp:.3f}) — heavy tails — while Ljung-Box "
+           f"(p={lbp:.3f}) and ARCH-LM (p={archp:.3f}) don't: the returns are iid with no "
+           f"volatility clustering. The empirical 99% loss ({emp99:.2f}) sits well past the "
+           f"Gaussian VaR ({g99:.2f}), so the normal VaR is breached ~{breach:.1f}% of the time "
+           "instead of 1%. With no ARCH and a single series, the fix is a heavier-tailed "
+           "conditional distribution — Student-t.")
     return text, T_TSTUD, [T_TSTUD, T_MF, T_COPULA, T_OK], why
 
 
 def _tail_evt(rng):
     nu = int(rng.choice([3, 4, 5]))
-    r = rng.standard_t(nu, size=4000)
-    r = r / r.std()
-    losses = -r
-    u = float(np.quantile(losses, 0.95))
-    exc = losses[losses > u]
-    xi = float(np.mean(np.log(exc / u)))          # Hill estimator of the tail index ξ
-    worst = float(losses.max())
+    u = xi = worst = 0.0
+    exc = np.array([])
+    for _ in range(25):
+        r = rng.standard_t(nu, size=4000)
+        r = r / r.std()
+        losses = -r
+        u = float(np.quantile(losses, 0.95))
+        exc = losses[losses > u]
+        xi = float(np.mean(np.log(exc / u)))      # Hill estimator of the tail index ξ
+        worst = float(losses.max())
+        if xi > 0.10:
+            break
     text = "\n".join([
         "Peaks-over-threshold — daily losses, 4000 days",
         "=" * 60,
         f"  Threshold  u (95th percentile)     {u:.2f}",
         f"  Exceedances above u                {exc.size}",
-        f"  Hill tail index  ξ̂                 {xi:.2f}    (ξ>0 ⇒ power-law tail)",
+        f"  Hill tail index  ξ̂                 {xi:.2f}",
         f"  Worst loss observed                {worst:.2f}",
-        "",
-        "  You must quote a 99.9% VaR — further into the tail than the worst",
-        "  loss the sample has ever shown.",
+        "  Required quantile                  99.99% VaR  (1-in-10000 days)",
     ])
-    why = (f"ξ̂ = {xi:.2f} > 0 is a genuine power-law tail. A 99.9% VaR lies beyond the worst "
-           f"observed loss ({worst:.2f}), where the empirical quantile is silent — fit a "
-           "Generalised Pareto to the exceedances and let EVT extrapolate past the data.")
+    why = (f"The Hill index ξ̂ = {xi:.2f} > 0 is a genuine power-law tail. The required 99.99% "
+           f"VaR lies beyond the worst loss the 4000-day sample has ever shown ({worst:.2f}), "
+           "where the empirical quantile is silent — fit a Generalised Pareto to the exceedances "
+           "and let EVT extrapolate past the data.")
     return text, T_EVT, [T_EVT, T_TSTUD, T_MF, T_OK], why
 
 
@@ -356,16 +384,19 @@ def _tail_copula(rng):
     s = np.sqrt(nu / rng.chisquare(nu, size=n))    # shared scale ⇒ Student-t copula
     a, b = z[0] * s, z[1] * s
     qa, qb = np.quantile(a, 0.05), np.quantile(b, 0.05)
+    breach_a = int(np.sum(a < qa))
+    breach_b = int(np.sum(b < qb))
     joint = int(np.sum((a < qa) & (b < qb)))
     indep = n * 0.05 * 0.05
     text = "\n".join([
-        "Two-asset tail dependence — 3000 days",
+        "Two-asset joint-loss check — 3000 days",
         "=" * 60,
         f"  Linear correlation                 {rho:.2f}",
-        "  Each asset breaches its own 5% VaR  ~150 days (by construction)",
+        f"  Asset A breaches its 5% VaR        {breach_a} days",
+        f"  Asset B breaches its 5% VaR        {breach_b} days",
         "",
         f"  Days BOTH breach on the SAME day   {joint}",
-        f"  If the tails were independent       ≈ {indep:.0f}",
+        f"  Expected if the tails were indep.  ≈ {indep:.0f}",
     ])
     why = (f"Both assets crash together {joint} times vs ≈{indep:.0f} under independence — far "
            "more co-crashing than the linear correlation alone implies. That's lower-tail "
@@ -382,7 +413,7 @@ def _tail_mcneilfrey(rng):
     clump = int(np.convolve(hit, np.ones(60, int), "valid").max())
     cur = float(sig[-1] / longrun)
     text = "\n".join([
-        "Conditional tail risk — GARCH(1,1)-t returns, 2500 days",
+        "Conditional tail risk — daily returns, 2500 days",
         "=" * 60,
         f"  Static (unconditional) 99% VaR     {var99:.2f}",
         f"  Total VaR breaches                 {int(hit.sum())}",
@@ -409,8 +440,88 @@ def _tail_case(rng) -> dict:
 
 
 # ===========================================================================
-TOPICS = ("VaR backtest", "MGARCH", "Tail & extreme")
-_BUILDERS = {"VaR backtest": _var_case, "MGARCH": _mgarch_case, "Tail & extreme": _tail_case}
+# Forecast evaluation — Diebold-Mariano (equal predictive accuracy)
+# ===========================================================================
+D_TIE = "Neither — the gap isn't statistically significant, so don't switch"
+D_A = "Model A — it forecasts significantly better"
+D_B = "Model B — it forecasts significantly better"
+D_MSE = "Whichever has the lower MSE — the smaller average loss wins, no test needed"
+DM_OPTS = [D_TIE, D_A, D_B, D_MSE]
+
+
+def _dm_stat(d: np.ndarray) -> float:
+    """Diebold-Mariano: mean loss-differential over its Newey-West (Bartlett)
+    long-run standard error, ~ N(0,1) under equal predictive accuracy."""
+    d = np.asarray(d, float)
+    T = len(d)
+    dbar = d.mean()
+    e = d - dbar
+    L = max(1, int(round(T ** (1.0 / 3.0))))      # Newey-West bandwidth rule of thumb
+    lrv = float(np.mean(e * e))
+    for k in range(1, L + 1):
+        lrv += 2.0 * (1.0 - k / (L + 1)) * float(np.mean(e[k:] * e[:-k]))
+    se = np.sqrt(max(lrv, 1e-12) / T)
+    return dbar / se
+
+
+def _dm_case(rng) -> dict:
+    flavor = str(rng.choice(["tie", "better"]))
+    T = int(rng.choice([250, 500, 750]))
+    rho = 0.7                                       # the two models share most of the error
+    gain = 1.0 if flavor == "tie" else float(rng.uniform(0.80, 0.88))
+
+    # bias toward the intended signal, but read the verdict off the actual DM stat
+    dm = dbar = mse_a = mse_b = 0.0
+    sig = False
+    for _ in range(60):
+        c = rng.standard_normal(T)
+        e_a = np.sqrt(rho) * c + np.sqrt(1 - rho) * rng.standard_normal(T)
+        e_b = (np.sqrt(rho) * c + np.sqrt(1 - rho) * rng.standard_normal(T)) * gain
+        la, lb = e_a ** 2, e_b ** 2               # squared-error loss
+        d = la - lb
+        dm, dbar = _dm_stat(d), float(d.mean())
+        mse_a, mse_b = float(la.mean()), float(lb.mean())
+        sig = abs(dm) > 1.96
+        if (flavor == "tie" and not sig) or (flavor == "better" and sig and dm > 0):
+            break
+
+    if not sig:
+        answer = D_TIE
+    else:                                          # d = L_A - L_B: dm>0 ⇒ A loses more ⇒ B better
+        answer = D_B if dm > 0 else D_A
+
+    text = "\n".join([
+        "Forecast evaluation — Diebold-Mariano test  (1-step volatility forecasts)",
+        "=" * 60,
+        f"  Out-of-sample window  T            {T}",
+        f"  Model A   mean squared error       {mse_a:.3f}",
+        f"  Model B   mean squared error       {mse_b:.3f}",
+        f"  Mean loss differential  d̄ = A − B   {dbar:+.3f}",
+        "",
+        f"  Diebold-Mariano  DM ~ N(0,1)        {dm:+.2f}    (reject if |DM| > 1.96)",
+    ])
+
+    if answer is D_TIE:
+        why = (f"Model {'B' if mse_b < mse_a else 'A'} has the lower MSE, but DM = {dm:+.2f} sits "
+               "inside ±1.96, so the equal-accuracy null stands — the gap is sampling noise. "
+               "A smaller average loss alone doesn't justify switching; the DM test (which nets "
+               "out the errors the two forecasts share) is what settles significance.")
+    else:
+        win, lose = ("B", "A") if dm > 0 else ("A", "B")
+        why = (f"DM = {dm:+.2f} is past ±1.96, so equal accuracy is rejected: Model {lose}'s "
+               f"losses are significantly larger and Model {win} forecasts better. Because the two "
+               "error series are correlated, the DM test on the differential — not a glance at the "
+               "two MSEs — is what makes this call.")
+
+    return {"topic": "Forecast eval", "text": text,
+            "questions": [_q("Which model should you use?", answer, DM_OPTS, rng)],
+            "why": why}
+
+
+# ===========================================================================
+TOPICS = ("VaR backtest", "MGARCH", "Tail & extreme", "Forecast eval")
+_BUILDERS = {"VaR backtest": _var_case, "MGARCH": _mgarch_case,
+             "Tail & extreme": _tail_case, "Forecast eval": _dm_case}
 
 
 def risk_round(rng, topic: str = "Mixed") -> dict:

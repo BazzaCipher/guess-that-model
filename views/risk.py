@@ -37,8 +37,8 @@ def render() -> None:
         st.session_state["rk_attempted"] = 0
 
     st.title("Risk quiz")
-    st.caption("VaR backtests, multivariate GARCH and tail risk. The numbers are simulated "
-               "fresh each round — read them, then answer.")
+    st.caption("VaR backtests, multivariate GARCH, tail risk and forecast evaluation. The numbers "
+               "are simulated fresh each round — read them, then answer.")
 
     c1, c2, c3 = st.columns([1, 1, 4])
     c1.metric("Correct", st.session_state["rk_correct"])
