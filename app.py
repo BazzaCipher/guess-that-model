@@ -10,7 +10,7 @@ import subprocess
 
 import streamlit as st
 
-from views import diagnose, explorers, inventory, trainer
+from views import diagnose, explorers, inventory, risk, trainer
 
 st.set_page_config(page_title="Econometrics model trainer", layout="wide")
 
@@ -30,6 +30,7 @@ pages = st.navigation(
         "Play": [
             st.Page(trainer.render, title="Trainer", icon="🎯", url_path="trainer"),
             st.Page(diagnose.render, title="Diagnose", icon="🔧", url_path="diagnose"),
+            st.Page(risk.render, title="Risk quiz", icon="📉", url_path="risk"),
         ],
         "Reference": [st.Page(inventory.render, title="Inventory", icon="📚", url_path="inventory")],
         "Explore": explorers.pages(),

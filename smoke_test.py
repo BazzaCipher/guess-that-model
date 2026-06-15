@@ -130,6 +130,44 @@ def check_diagnose() -> None:
     print(f"  diagnose OK — {len(seen_problems)} case types, round build + view submit clean")
 
 
+def check_risk() -> None:
+    """The 'Risk quiz' mode: every topic builds a self-consistent round (scenario
+    text + MCQs whose options contain the right answer) and the view renders +
+    submits without exception."""
+    import numpy as np
+    from risk_quiz import TOPICS, risk_round
+
+    rng = np.random.default_rng(0)
+    seen = set()
+    for _ in range(150):  # enough mixed draws to hit every topic and case
+        r = risk_round(rng)
+        assert r["text"].strip(), "risk: empty scenario text"
+        assert r["topic"] in TOPICS, f"risk: bad topic {r['topic']!r}"
+        assert r["questions"], "risk: no questions"
+        for q in r["questions"]:
+            assert q["answer"] in q["options"], "risk: correct answer not offered"
+            assert len(q["options"]) == 4, "risk: wrong option count"
+            assert len(set(q["options"])) == 4, "risk: duplicate options"
+        seen.add(r["topic"])
+    assert seen == set(TOPICS), f"risk: only saw {seen}"
+
+    # each explicit topic must build cleanly too (exercises every case generator)
+    for t in TOPICS:
+        for _ in range(30):
+            risk_round(rng, t)
+
+    at = _run_view("risk")
+    assert not at.exception, f"risk view: {at.exception}"
+    for b in at.button:
+        if b.label == "Submit":
+            b.click()
+            at.run()
+            break
+    assert not at.exception, f"risk after submit: {at.exception}"
+    assert at.session_state["rk_attempted"] == 1, "risk: submit did not register"
+    print(f"  risk OK — {len(seen)} topics, dynamic rounds + view submit clean")
+
+
 def check_apptest() -> None:
     # app.py shell (nav + default page)
     from streamlit.testing.v1 import AppTest
@@ -199,6 +237,7 @@ if __name__ == "__main__":
         check_registry()
         check_tracks()
         check_diagnose()
+        check_risk()
         check_apptest()
         check_demos()
         check_explorer_pages()
